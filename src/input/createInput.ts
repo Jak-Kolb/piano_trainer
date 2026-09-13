@@ -48,7 +48,7 @@ export const INPUT_MODE_OPTIONS: {
   {
     id: 'mic',
     label: 'Microphone',
-    hint: 'Single notes only — chords fall back to self-report',
+    hint: 'Clear single notes only — ignores noise; chords use Hit/Miss',
   },
   {
     id: 'self-report',

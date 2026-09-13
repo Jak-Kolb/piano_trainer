@@ -11,18 +11,11 @@ export function ModulePicker({ onSelect }: Props) {
         <button
           key={m.id}
           type="button"
-          disabled={!m.available}
           onClick={() => onSelect(m.id)}
-          className={`min-h-20 px-5 py-4 text-left ${
-            m.available
-              ? 'bg-shadow text-ivory'
-              : 'cursor-not-allowed bg-shadow/40 text-dust/60'
-          }`}
+          className="min-h-20 bg-shadow px-5 py-4 text-left text-ivory"
         >
           <span className="font-display text-xl">{m.title}</span>
-          <span className="mt-1 block font-ui text-sm text-dust">
-            {m.available ? m.blurb : `${m.blurb} · Coming soon`}
-          </span>
+          <span className="mt-1 block font-ui text-sm text-dust">{m.blurb}</span>
         </button>
       ))}
     </div>

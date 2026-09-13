@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
-import { ComingSoon } from './components/ComingSoon'
 import { ModeSelector } from './components/ModeSelector'
 import { ModulePicker } from './components/ModulePicker'
 import { SafariNotice } from './components/SafariNotice'
+import { InversionDrill } from './drills/InversionDrill'
+import { LeftHandDrill } from './drills/LeftHandDrill'
+import { ProgressView } from './drills/ProgressView'
+import { RhythmDrill } from './drills/RhythmDrill'
+import { ScaleDrill } from './drills/ScaleDrill'
+import { SessionRunner } from './drills/SessionRunner'
+import { SightReadingDrill } from './drills/SightReadingDrill'
+import { SlashChordDrill } from './drills/SlashChordDrill'
 import { TriadRecall } from './drills/TriadRecall'
 import {
   createInputSource,
@@ -11,7 +18,7 @@ import {
   type InputModeId,
   type InputSource,
 } from './input'
-import { MODULES, type ModuleId } from './modules'
+import type { ModuleId } from './modules'
 
 export default function App() {
   const [mode, setMode] = useState<InputModeId>(() => loadSavedInputMode())
@@ -20,7 +27,6 @@ export default function App() {
   const [view, setView] = useState<'home' | ModuleId>('home')
   const [startError, setStartError] = useState<string | null>(null)
 
-  // Recreate input when mode changes
   useEffect(() => {
     const src = createInputSource(mode)
     setInput(src)
@@ -42,24 +48,39 @@ export default function App() {
     setMode(next)
   }
 
-  if (view === 'triad-recall' && input) {
-    return (
-      <TriadRecall
-        input={input}
-        micFallsBackToSelfReport={mode === 'mic'}
-        onExit={() => setView('home')}
-      />
-    )
-  }
+  const back = () => setView('home')
 
-  if (view !== 'home') {
-    const mod = MODULES.find((m) => m.id === view)
-    return (
-      <ComingSoon
-        title={mod?.title ?? 'Module'}
-        onBack={() => setView('home')}
-      />
-    )
+  if (input && view !== 'home') {
+    switch (view) {
+      case 'triad-recall':
+        return (
+          <TriadRecall
+            input={input}
+            micFallsBackToSelfReport={mode === 'mic'}
+            onExit={back}
+          />
+        )
+      case 'inversions':
+        return <InversionDrill input={input} onExit={back} />
+      case 'slash-chords':
+        return <SlashChordDrill input={input} onExit={back} />
+      case 'scales':
+        return <ScaleDrill input={input} onExit={back} kind="scale" />
+      case 'arpeggios':
+        return <ScaleDrill input={input} onExit={back} kind="arpeggio" />
+      case 'left-hand':
+        return <LeftHandDrill input={input} onExit={back} />
+      case 'sight-reading':
+        return <SightReadingDrill input={input} onExit={back} />
+      case 'rhythm':
+        return <RhythmDrill input={input} onExit={back} />
+      case 'session':
+        return <SessionRunner input={input} onExit={back} />
+      case 'session-reading':
+        return <SessionRunner input={input} onExit={back} readingOnly />
+      case 'progress':
+        return <ProgressView onExit={back} />
+    }
   }
 
   return (

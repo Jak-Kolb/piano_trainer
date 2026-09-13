@@ -16,11 +16,18 @@ describe('yin helpers', () => {
     const n = 2048
     const buf = new Float32Array(n)
     for (let i = 0; i < n; i++) {
-      buf[i] = Math.sin((2 * Math.PI * hz * i) / sr)
+      buf[i] = 0.5 * Math.sin((2 * Math.PI * hz * i) / sr)
     }
     const detected = yinPitch(buf, sr)
     expect(detected).not.toBeNull()
-    expect(detected!).toBeGreaterThan(430)
-    expect(detected!).toBeLessThan(450)
+    expect(detected!.hz).toBeGreaterThan(430)
+    expect(detected!.hz).toBeLessThan(450)
+    expect(detected!.clarity).toBeGreaterThan(0.7)
+  })
+
+  it('rejects near-silence', () => {
+    const buf = new Float32Array(2048)
+    for (let i = 0; i < buf.length; i++) buf[i] = (Math.random() - 0.5) * 0.001
+    expect(yinPitch(buf, 44100)).toBeNull()
   })
 })

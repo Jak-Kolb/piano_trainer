@@ -1,17 +1,22 @@
-/** YIN pitch detector (monophonic). Returns Hz or null. */
+/** YIN pitch detector (monophonic). */
+
+export interface YinResult {
+  hz: number
+  /** 0–1, higher = clearer pitch (1 - yin value at tau). */
+  clarity: number
+}
 
 export function yinPitch(
   buffer: Float32Array,
   sampleRate: number,
-  threshold = 0.12,
-): number | null {
+  threshold = 0.15,
+): YinResult | null {
   const size = buffer.length
   if (size < 64) return null
 
   const half = Math.floor(size / 2)
   const yinBuffer = new Float32Array(half)
 
-  // Difference function
   for (let tau = 1; tau < half; tau++) {
     let sum = 0
     for (let i = 0; i < half; i++) {
@@ -21,7 +26,6 @@ export function yinPitch(
     yinBuffer[tau] = sum
   }
 
-  // Cumulative mean normalized difference
   yinBuffer[0] = 1
   let runningSum = 0
   for (let tau = 1; tau < half; tau++) {
@@ -29,7 +33,6 @@ export function yinPitch(
     yinBuffer[tau] = runningSum === 0 ? 1 : (yinBuffer[tau]! * tau) / runningSum
   }
 
-  // Absolute threshold
   let tauEstimate = -1
   for (let tau = 2; tau < half; tau++) {
     if (yinBuffer[tau]! < threshold) {
@@ -40,7 +43,6 @@ export function yinPitch(
   }
   if (tauEstimate === -1) return null
 
-  // Parabolic interpolation
   const x0 = tauEstimate < 1 ? tauEstimate : tauEstimate - 1
   const x2 = tauEstimate + 1 < half ? tauEstimate + 1 : tauEstimate
   let betterTau: number
@@ -55,9 +57,10 @@ export function yinPitch(
     betterTau = tauEstimate + (s2 - s0) / (2 * (2 * s1 - s2 - s0))
   }
 
+  const yinAt = yinBuffer[tauEstimate]!
   const freq = sampleRate / betterTau
-  if (freq < 27 || freq > 4200) return null
-  return freq
+  if (freq < 55 || freq > 2100) return null // ignore rumble / very high noise
+  return { hz: freq, clarity: Math.max(0, Math.min(1, 1 - yinAt)) }
 }
 
 export function hzToMidi(hz: number): number {
