@@ -1,2 +1,10 @@
-export type { GradeResult, InputSource } from './types'
+export type { GradeResult, InputModeId, InputSource } from './types'
 export { createSelfReportSource } from './SelfReportSource'
+export { createMicSource } from './MicSource'
+export { createMidiSource, midiSupported } from './MidiSource'
+export {
+  INPUT_MODE_OPTIONS,
+  createInputSource,
+  loadSavedInputMode,
+  saveInputMode,
+} from './createInput'

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
+import { pitchClassesMatchChord } from '../theory'
 import {
   DEFAULT_QUALITIES,
   SESSION_LENGTH,
@@ -14,10 +15,16 @@ type Phase = 'prompt' | 'revealed' | 'done'
 
 interface Props {
   input: InputSource
+  /** Mic cannot grade chords — keep Hit/Miss. */
+  micFallsBackToSelfReport?: boolean
   onExit: () => void
 }
 
-export function TriadRecall({ input, onExit }: Props) {
+export function TriadRecall({
+  input,
+  micFallsBackToSelfReport = false,
+  onExit,
+}: Props) {
   const [phase, setPhase] = useState<Phase>('prompt')
   const [draw, setDraw] = useState(0)
   const [prompt, setPrompt] = useState<TriadPrompt>(() =>
@@ -28,9 +35,20 @@ export function TriadRecall({ input, onExit }: Props) {
   const [startedAt, setStartedAt] = useState(() => performance.now())
   const [elapsedMs, setElapsedMs] = useState<number | null>(null)
   const [flash, setFlash] = useState<'hit' | 'miss' | null>(null)
+  const [heard, setHeard] = useState<string>('')
   const requeueDelayed = useRef<{ prompt: TriadPrompt; remaining: number }[]>(
     [],
   )
+  const gradingLock = useRef(false)
+  const promptRef = useRef(prompt)
+  promptRef.current = prompt
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+
+  const autoGrade =
+    input.supportsAutomaticGrade() &&
+    input.id === 'midi' &&
+    !micFallsBackToSelfReport
 
   const medianMsById = useMemo(() => {
     const map: Record<string, number[]> = {}
@@ -44,6 +62,7 @@ export function TriadRecall({ input, onExit }: Props) {
 
   const advance = useCallback(
     (missed?: TriadPrompt) => {
+      gradingLock.current = false
       if (missed) {
         requeueDelayed.current.push({ prompt: missed, remaining: 3 })
       }
@@ -75,24 +94,48 @@ export function TriadRecall({ input, onExit }: Props) {
     [draw, medianMsById, prompt.id],
   )
 
-  const grade = (correct: boolean) => {
-    const ms = Math.round(performance.now() - startedAt)
-    setElapsedMs(ms)
-    setAttempts((prev) => [...prev, { prompt, correct, ms }])
-    setFlash(correct ? 'hit' : 'miss')
-    setStreak((s) => (correct ? s + 1 : 0))
-    setPhase('revealed')
-    window.setTimeout(() => {
-      advance(correct ? undefined : prompt)
-    }, 1000)
-  }
+  const grade = useCallback(
+    (correct: boolean) => {
+      if (gradingLock.current) return
+      gradingLock.current = true
+      const ms = Math.round(performance.now() - startedAt)
+      setElapsedMs(ms)
+      setAttempts((prev) => [
+        ...prev,
+        { prompt: promptRef.current, correct, ms },
+      ])
+      setFlash(correct ? 'hit' : 'miss')
+      setStreak((s) => (correct ? s + 1 : 0))
+      setPhase('revealed')
+      window.setTimeout(() => {
+        advance(correct ? undefined : promptRef.current)
+      }, 1000)
+    },
+    [advance, startedAt],
+  )
 
   const showAnswer = () => {
     setElapsedMs(Math.round(performance.now() - startedAt))
     setPhase('revealed')
   }
 
-  useEffect(() => input.onChange(() => {}), [input])
+  useEffect(() => {
+    return input.onChange(() => {
+      const pcs = input.getHeldPitchClasses()
+      setHeard(
+        pcs.length
+          ? `Hearing ${pcs.length} note${pcs.length === 1 ? '' : 's'}`
+          : input.getStatus(),
+      )
+      if (!autoGrade) return
+      if (phaseRef.current !== 'prompt') return
+      if (gradingLock.current) return
+      if (pcs.length === 0) return
+      if (pitchClassesMatchChord(pcs, promptRef.current.pitchClasses)) {
+        grade(true)
+      }
+    })
+  }, [autoGrade, grade, input])
 
   if (phase === 'done') {
     const hitRate = attempts.length
@@ -105,7 +148,7 @@ export function TriadRecall({ input, onExit }: Props) {
 
     return (
       <div className="flex h-full flex-col bg-ink">
-        <TopBar streak={streak} onExit={onExit} />
+        <TopBar streak={streak} onExit={onExit} status={input.getStatus()} />
         <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
           <h1 className="font-display text-4xl text-ivory">Session done</h1>
           <p className="font-ui text-dust">
@@ -141,7 +184,17 @@ export function TriadRecall({ input, onExit }: Props) {
         flash === 'hit' ? 'bg-brass' : flash === 'miss' ? 'bg-felt' : 'bg-ink'
       }`}
     >
-      <TopBar streak={streak} onExit={onExit} />
+      <TopBar
+        streak={streak}
+        onExit={onExit}
+        status={heard || input.getStatus()}
+      />
+      {micFallsBackToSelfReport && (
+        <p className="bg-shadow px-4 py-2 text-center font-ui text-sm text-dust">
+          Mic is monophonic — chord drills use Hit / Miss. Hearing a pitch still
+          shows above.
+        </p>
+      )}
       <div className="flex flex-1 flex-col items-center justify-center px-4">
         <p className="mb-4 font-ui text-sm text-dust">
           {Math.min(draw + 1, SESSION_LENGTH)} / {SESSION_LENGTH}
@@ -181,44 +234,62 @@ export function TriadRecall({ input, onExit }: Props) {
       </div>
       {phase === 'prompt' && (
         <div className="flex gap-3 p-4 pb-8">
-          <button
-            type="button"
-            onClick={showAnswer}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
-          >
-            Show me
-          </button>
-          <button
-            type="button"
-            onClick={() => grade(true)}
-            className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
-          >
-            Hit
-          </button>
-          <button
-            type="button"
-            onClick={() => grade(false)}
-            className="min-h-16 flex-1 bg-felt font-ui text-lg font-medium text-ivory"
-          >
-            Miss
-          </button>
+          {!autoGrade && (
+            <>
+              <button
+                type="button"
+                onClick={showAnswer}
+                className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+              >
+                Show me
+              </button>
+              <button
+                type="button"
+                onClick={() => grade(true)}
+                className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
+              >
+                Hit
+              </button>
+              <button
+                type="button"
+                onClick={() => grade(false)}
+                className="min-h-16 flex-1 bg-felt font-ui text-lg font-medium text-ivory"
+              >
+                Miss
+              </button>
+            </>
+          )}
+          {autoGrade && (
+            <p className="w-full text-center font-ui text-dust">
+              Play the chord — MIDI grades automatically
+            </p>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function TopBar({ streak, onExit }: { streak: number; onExit: () => void }) {
+function TopBar({
+  streak,
+  onExit,
+  status,
+}: {
+  streak: number
+  onExit: () => void
+  status: string
+}) {
   return (
-    <div className="flex items-center justify-between px-4 py-3">
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
       <button
         type="button"
         onClick={onExit}
-        className="min-h-12 px-3 font-ui text-dust"
+        className="min-h-12 shrink-0 px-3 font-ui text-dust"
       >
         Exit
       </button>
-      <p className="font-ui text-sm text-dust">
+      <p className="truncate font-ui text-xs text-dust">{status}</p>
+      <p className="shrink-0 font-ui text-sm text-dust">
         Streak <span className="font-display text-brass">{streak}</span>
       </p>
     </div>
