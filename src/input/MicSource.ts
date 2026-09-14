@@ -60,6 +60,7 @@ export function createMicSource(): InputSource {
     label: 'Microphone',
     getStatus: () => status,
     getHeldPitchClasses: () => held,
+    getHeldMidiNotes: () => [],
     supportsAutomaticGrade: () => true,
     async start() {
       if (disposed) return

@@ -1,7 +1,4 @@
 import { useEffect, useState } from 'react'
-import { ModeSelector } from './components/ModeSelector'
-import { ModulePicker } from './components/ModulePicker'
-import { SafariNotice } from './components/SafariNotice'
 import { InversionDrill } from './drills/InversionDrill'
 import { LeftHandDrill } from './drills/LeftHandDrill'
 import { ProgressView } from './drills/ProgressView'
@@ -19,13 +16,24 @@ import {
   type InputSource,
 } from './input'
 import type { ModuleId } from './modules'
+import { HomeHub } from './screens/HomeHub'
+import { PiecePage } from './screens/PiecePage'
+import { PiecesLibrary } from './screens/PiecesLibrary'
+import { SkillsScreen } from './screens/SkillsScreen'
+
+type Nav =
+  | { screen: 'home' }
+  | { screen: 'skills' }
+  | { screen: 'pieces' }
+  | { screen: 'piece'; id: string }
+  | { screen: 'drill'; id: ModuleId }
 
 export default function App() {
   const [mode, setMode] = useState<InputModeId>(() => loadSavedInputMode())
   const [input, setInput] = useState<InputSource | null>(null)
   const [status, setStatus] = useState('…')
-  const [view, setView] = useState<'home' | ModuleId>('home')
   const [startError, setStartError] = useState<string | null>(null)
+  const [nav, setNav] = useState<Nav>({ screen: 'home' })
 
   useEffect(() => {
     const src = createInputSource(mode)
@@ -48,10 +56,13 @@ export default function App() {
     setMode(next)
   }
 
-  const back = () => setView('home')
+  if (!input) {
+    return <div className="flex h-full items-center justify-center bg-ink font-ui text-dust">Loading…</div>
+  }
 
-  if (input && view !== 'home') {
-    switch (view) {
+  if (nav.screen === 'drill') {
+    const back = () => setNav({ screen: 'skills' })
+    switch (nav.id) {
       case 'triad-recall':
         return (
           <TriadRecall
@@ -83,22 +94,44 @@ export default function App() {
     }
   }
 
+  if (nav.screen === 'piece') {
+    return (
+      <PiecePage
+        pieceId={nav.id}
+        input={input}
+        onBack={() => setNav({ screen: 'pieces' })}
+      />
+    )
+  }
+
+  if (nav.screen === 'skills') {
+    return (
+      <SkillsScreen
+        midiStatus={status}
+        onBack={() => setNav({ screen: 'home' })}
+        onSelect={(id) => setNav({ screen: 'drill', id })}
+      />
+    )
+  }
+
+  if (nav.screen === 'pieces') {
+    return (
+      <PiecesLibrary
+        midiStatus={status}
+        onBack={() => setNav({ screen: 'home' })}
+        onOpen={(id) => setNav({ screen: 'piece', id })}
+      />
+    )
+  }
+
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-ink">
-      <SafariNotice />
-      <main className="mx-auto flex w-full max-w-3xl flex-col items-center gap-8 px-6 py-10">
-        <div className="text-center">
-          <h1 className="font-display text-6xl font-bold text-ivory">Keys</h1>
-          <p className="mt-3 font-ui text-dust">Pick a module · set your input</p>
-        </div>
-
-        <ModeSelector mode={mode} status={status} onChange={selectMode} />
-        {startError && (
-          <p className="font-ui text-sm text-felt">{startError}</p>
-        )}
-
-        <ModulePicker onSelect={(id) => setView(id)} />
-      </main>
-    </div>
+    <HomeHub
+      mode={mode}
+      status={status}
+      startError={startError}
+      onMode={selectMode}
+      onSkills={() => setNav({ screen: 'skills' })}
+      onPieces={() => setNav({ screen: 'pieces' })}
+    />
   )
 }

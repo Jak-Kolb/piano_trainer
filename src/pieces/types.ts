@@ -1,0 +1,41 @@
+export type HandFilter = 'both' | 'right' | 'left'
+
+export interface PieceNote {
+  /** MIDI note number 0–127 */
+  midi: number
+  /** Start time in seconds at original tempo */
+  time: number
+  duration: number
+  /** 0 = unclear / mixed, 1 = RH-ish (higher track), 2 = LH-ish */
+  track: number
+  measure: number
+}
+
+export interface StoredPiece {
+  id: string
+  name: string
+  createdAt: string
+  /** Original file bytes */
+  midiBytes: ArrayBuffer
+  durationSec: number
+  noteCount: number
+  measureCount: number
+  hasTwoHands: boolean
+}
+
+export interface ParsedPiece {
+  notes: PieceNote[]
+  durationSec: number
+  measureCount: number
+  hasTwoHands: boolean
+  ppq: number
+  /** seconds per quarter at file tempo (first tempo) */
+  secPerQuarter: number
+}
+
+export interface PieceControls {
+  tempoPercent: number
+  loopStartMeasure: number
+  loopEndMeasure: number
+  hands: HandFilter
+}

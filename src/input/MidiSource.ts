@@ -68,6 +68,7 @@ export function createMidiSource(): InputSource {
       for (const n of heldMidi) pcs.add(((n % 12) + 12) % 12)
       return [...pcs]
     },
+    getHeldMidiNotes: () => [...heldMidi],
     supportsAutomaticGrade: () => true,
     async start() {
       if (disposed) return

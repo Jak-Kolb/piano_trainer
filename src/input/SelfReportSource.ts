@@ -7,6 +7,7 @@ export function createSelfReportSource(): InputSource {
     label: 'Self-report',
     getStatus: () => 'Tap Hit or Miss after you play',
     getHeldPitchClasses: () => [],
+    getHeldMidiNotes: () => [],
     supportsAutomaticGrade: () => false,
     async start() {},
     onChange(listener) {
