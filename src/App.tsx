@@ -19,7 +19,13 @@ import type { ModuleId } from './modules'
 import { HomeHub } from './screens/HomeHub'
 import { PiecePage } from './screens/PiecePage'
 import { PiecesLibrary } from './screens/PiecesLibrary'
+import { SettingsScreen } from './screens/SettingsScreen'
 import { SkillsScreen } from './screens/SkillsScreen'
+import {
+  loadMicSettings,
+  saveMicSettings,
+  type MicSettings,
+} from './settings/micSettings'
 
 type Nav =
   | { screen: 'home' }
@@ -27,6 +33,7 @@ type Nav =
   | { screen: 'pieces' }
   | { screen: 'piece'; id: string }
   | { screen: 'drill'; id: ModuleId }
+  | { screen: 'settings' }
 
 export default function App() {
   const [mode, setMode] = useState<InputModeId>(() => loadSavedInputMode())
@@ -34,9 +41,13 @@ export default function App() {
   const [status, setStatus] = useState('…')
   const [startError, setStartError] = useState<string | null>(null)
   const [nav, setNav] = useState<Nav>({ screen: 'home' })
+  const [micSettings, setMicSettings] = useState<MicSettings>(() =>
+    loadMicSettings(),
+  )
+  const [micEpoch, setMicEpoch] = useState(0)
 
   useEffect(() => {
-    const src = createInputSource(mode)
+    const src = createInputSource(mode, micSettings)
     setInput(src)
     setStatus(src.getStatus())
     setStartError(null)
@@ -49,7 +60,7 @@ export default function App() {
       unsub()
       src.dispose()
     }
-  }, [mode])
+  }, [mode, micSettings, micEpoch])
 
   const selectMode = (next: InputModeId) => {
     saveInputMode(next)
@@ -124,6 +135,21 @@ export default function App() {
     )
   }
 
+  if (nav.screen === 'settings') {
+    return (
+      <SettingsScreen
+        initial={micSettings}
+        onBack={() => setNav({ screen: 'home' })}
+        onSave={(next) => {
+          saveMicSettings(next)
+          setMicSettings(next)
+          setMicEpoch((e) => e + 1)
+          setNav({ screen: 'home' })
+        }}
+      />
+    )
+  }
+
   return (
     <HomeHub
       mode={mode}
@@ -132,6 +158,8 @@ export default function App() {
       onMode={selectMode}
       onSkills={() => setNav({ screen: 'skills' })}
       onPieces={() => setNav({ screen: 'pieces' })}
+      onSettings={() => setNav({ screen: 'settings' })}
     />
   )
 }
+

@@ -1,18 +1,13 @@
+import type { MicSettings } from '../settings/micSettings'
+import { DEFAULT_MIC_SETTINGS } from '../settings/micSettings'
 import type { InputSource } from './types'
 import { hzToMidi, midiToPitchClass, yinPitch } from './yin'
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 
-/** Absolute floor — below this is always silence. */
-const MIN_RMS = 0.035
-/** Clarity required from YIN (0–1). */
-const MIN_CLARITY = 0.82
-/** Same pitch must win this many frames in a row before we report it. */
-const ATTACK_FRAMES = 5
-/** Frames below gate before we clear the held note. */
-const RELEASE_FRAMES = 10
-
-export function createMicSource(): InputSource {
+export function createMicSource(
+  settings: MicSettings = DEFAULT_MIC_SETTINGS,
+): InputSource {
   const listeners = new Set<() => void>()
   let ctx: AudioContext | null = null
   let stream: MediaStream | null = null
@@ -92,32 +87,29 @@ export function createMicSource(): InputSource {
           for (let i = 0; i < buf.length; i++) sum += buf[i]! * buf[i]!
           const rms = Math.sqrt(sum / buf.length)
 
-          // Track noise floor only when quiet
-          if (rms < MIN_RMS) {
+          if (rms < settings.minRms) {
             noiseFloor = noiseFloor * 0.95 + rms * 0.05
           }
-          const gate = Math.max(MIN_RMS, noiseFloor * 5)
+          const gate = Math.max(
+            settings.minRms,
+            noiseFloor * settings.noiseGateMult,
+          )
 
           if (rms < gate) {
             quietCount++
             candidatePc = null
             candidateCount = 0
-            if (quietCount >= RELEASE_FRAMES) clearHeld()
+            if (quietCount >= settings.releaseFrames) clearHeld()
             raf = requestAnimationFrame(tick)
             return
           }
 
           quietCount = 0
-          const result = yinPitch(buf, ctx.sampleRate, 0.12)
-          if (!result || result.clarity < MIN_CLARITY) {
+          const result = yinPitch(buf, ctx.sampleRate, settings.yinThreshold)
+          if (!result || result.clarity < settings.minClarity) {
             candidatePc = null
             candidateCount = 0
-            // Loud but no clear pitch (chords / noise) — stay quiet
-            if (held.length) {
-              // keep last note briefly; release handled by quiet path
-            } else {
-              status = 'Listening…'
-            }
+            if (!held.length) status = 'Listening…'
             raf = requestAnimationFrame(tick)
             return
           }
@@ -129,7 +121,7 @@ export function createMicSource(): InputSource {
             candidateCount = 1
           }
 
-          if (candidateCount >= ATTACK_FRAMES) {
+          if (candidateCount >= settings.attackFrames) {
             const changed = held.length !== 1 || held[0] !== pc
             held = [pc]
             status = `Hearing ${NOTE_NAMES[pc]}`

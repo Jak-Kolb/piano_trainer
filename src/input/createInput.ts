@@ -1,3 +1,5 @@
+import type { MicSettings } from '../settings/micSettings'
+import { DEFAULT_MIC_SETTINGS } from '../settings/micSettings'
 import { createMicSource } from './MicSource'
 import { createMidiSource, midiSupported } from './MidiSource'
 import { createSelfReportSource } from './SelfReportSource'
@@ -12,7 +14,6 @@ export function loadSavedInputMode(): InputModeId {
   } catch {
     /* ignore */
   }
-  // Prefer MIDI when the browser can do it (Kawai primary)
   return midiSupported() ? 'midi' : 'self-report'
 }
 
@@ -24,12 +25,15 @@ export function saveInputMode(mode: InputModeId) {
   }
 }
 
-export function createInputSource(mode: InputModeId): InputSource {
+export function createInputSource(
+  mode: InputModeId,
+  micSettings: MicSettings = DEFAULT_MIC_SETTINGS,
+): InputSource {
   switch (mode) {
     case 'midi':
       return createMidiSource()
     case 'mic':
-      return createMicSource()
+      return createMicSource(micSettings)
     case 'self-report':
       return createSelfReportSource()
   }
