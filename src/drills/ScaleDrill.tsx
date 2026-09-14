@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
-import { fingeringFor } from '../theory'
+import {
+  fingeringFor,
+  formatNoteName,
+  pitchClass,
+  twoOctaveArpeggioNotes,
+  twoOctaveScaleNotes,
+} from '../theory'
 import { DrillFrame } from './DrillFrame'
 import { SelfReportButtons } from './SelfReportButtons'
 
@@ -22,28 +29,47 @@ export function ScaleDrill({
 
   const fingering = useMemo(() => {
     if (kind === 'arpeggio') {
-      // Root-position arpeggio fingers (common): RH 1 2 3 5, LH 5 3 2 1 — marked unverified in data later
-      return hand === 'right' ? [1, 2, 3, 5, 1, 2, 3, 5] : [5, 3, 2, 1, 5, 3, 2, 1]
+      return hand === 'right'
+        ? [1, 2, 3, 5, 1, 2, 3, 5]
+        : [5, 3, 2, 1, 5, 3, 2, 1]
     }
-    return fingeringFor(key, hand, 'scale')?.ascending ?? [1, 2, 3, 1, 2, 3, 4, 5]
+    return (
+      fingeringFor(key, hand, 'scale')?.ascending ?? [1, 2, 3, 1, 2, 3, 4, 5]
+    )
   }, [hand, key, kind])
 
-  const twoOct = useMemo(() => [...fingering, ...fingering.slice(1)], [fingering])
+  const notes = useMemo(
+    () =>
+      kind === 'arpeggio'
+        ? twoOctaveArpeggioNotes(key)
+        : twoOctaveScaleNotes(key),
+    [key, kind],
+  )
+
+  const fingers = useMemo(() => {
+    const two = [...fingering, ...fingering.slice(1)]
+    return two.slice(0, notes.length)
+  }, [fingering, notes.length])
+
+  const current = notes[step] ?? null
   const unverified =
-    kind === 'scale'
-      ? !fingeringFor(key, hand, 'scale')?.verified
-      : true
+    kind === 'scale' ? !fingeringFor(key, hand, 'scale')?.verified : true
+
+  useEffect(() => {
+    setStep(0)
+  }, [key, hand, kind])
 
   useEffect(() => {
     if (input.id !== 'midi' && input.id !== 'mic') return
+    if (!current) return
+    const target = pitchClass(current)
     return input.onChange(() => {
       const pcs = input.getHeldPitchClasses()
-      if (pcs.length === 1) {
-        // advance on any single note for monophonic practice pacing
-        setStep((s) => Math.min(s + 1, twoOct.length - 1))
+      if (pcs.length === 1 && pcs[0] === target) {
+        setStep((s) => Math.min(s + 1, notes.length - 1))
       }
     })
-  }, [input, twoOct.length])
+  }, [input, current, notes.length])
 
   return (
     <DrillFrame
@@ -71,16 +97,15 @@ export function ScaleDrill({
         />
       }
     >
-      <div className="mb-6 flex flex-wrap justify-center gap-2">
+      <div className="mb-4 flex flex-wrap justify-center gap-2">
         {KEYS.map((k) => (
           <button
             key={k}
             type="button"
-            onClick={() => {
-              setKey(k)
-              setStep(0)
-            }}
-            className={`min-h-12 px-3 font-ui ${key === k ? 'bg-brass text-ink' : 'bg-shadow text-dust'}`}
+            onClick={() => setKey(k)}
+            className={`min-h-12 px-3 font-ui ${
+              key === k ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+            }`}
           >
             {k.replace(' major', '')}
           </button>
@@ -91,42 +116,48 @@ export function ScaleDrill({
           <button
             key={h}
             type="button"
-            onClick={() => {
-              setHand(h)
-              setStep(0)
-            }}
-            className={`min-h-12 px-4 font-ui ${hand === h ? 'bg-brass text-ink' : 'bg-shadow text-dust'}`}
+            onClick={() => setHand(h)}
+            className={`min-h-12 px-4 font-ui ${
+              hand === h ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+            }`}
           >
             {h === 'right' ? 'RH' : 'LH'}
           </button>
         ))}
       </div>
-      <p className="font-display text-4xl text-ivory">
+      <p className="font-display text-3xl text-ivory">
         {kind === 'scale' ? key : key.replace('major', 'arpeggio')}
       </p>
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        {twoOct.map((f, i) => (
+
+      <div className="mt-6 w-full max-w-lg">
+        <KeyboardDiagram highlight={notes} active={current} hideLabels />
+      </div>
+
+      <div className="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
+        {notes.map((n, i) => (
           <span
-            key={`${i}-${f}`}
-            className={`flex h-14 w-14 items-center justify-center font-display text-2xl ${
+            key={`${i}-${formatNoteName(n)}`}
+            className={`flex min-h-16 min-w-14 flex-col items-center justify-center px-2 font-display ${
               i === step ? 'bg-brass text-ink' : 'bg-shadow text-ivory'
             }`}
           >
-            {f}
+            <span className="text-xl">{formatNoteName(n)}</span>
+            <span className="text-sm opacity-80">{fingers[i] ?? '·'}</span>
           </span>
         ))}
       </div>
-      <p className="mt-6 font-ui text-dust">
-        Finger {twoOct[step]} · step {step + 1}/{twoOct.length}
+
+      <p className="mt-4 font-ui text-dust">
+        {current ? formatNoteName(current) : '—'} · finger {fingers[step] ?? '—'}{' '}
+        · {step + 1}/{notes.length}
       </p>
       <button
         type="button"
-        className="mt-4 min-h-12 px-4 font-ui text-dust"
-        onClick={() => setStep((s) => Math.min(s + 1, twoOct.length - 1))}
+        className="mt-3 min-h-12 px-4 font-ui text-dust"
+        onClick={() => setStep((s) => Math.min(s + 1, notes.length - 1))}
       >
         Next note
       </button>
     </DrillFrame>
   )
 }
-
