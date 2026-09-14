@@ -69,6 +69,7 @@ export function createMidiSource(): InputSource {
       return [...pcs]
     },
     getHeldMidiNotes: () => [...heldMidi],
+    getMeter: () => null,
     supportsAutomaticGrade: () => true,
     async start() {
       if (disposed) return

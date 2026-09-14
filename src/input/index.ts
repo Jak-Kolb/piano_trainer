@@ -1,4 +1,4 @@
-export type { GradeResult, InputModeId, InputSource } from './types'
+export type { GradeResult, InputModeId, InputSource, MicMeter } from './types'
 export { createSelfReportSource } from './SelfReportSource'
 export { createMicSource } from './MicSource'
 export { createMidiSource, midiSupported } from './MidiSource'

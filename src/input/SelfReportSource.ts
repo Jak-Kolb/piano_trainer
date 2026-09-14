@@ -8,6 +8,7 @@ export function createSelfReportSource(): InputSource {
     getStatus: () => 'Tap Hit or Miss after you play',
     getHeldPitchClasses: () => [],
     getHeldMidiNotes: () => [],
+    getMeter: () => null,
     supportsAutomaticGrade: () => false,
     async start() {},
     onChange(listener) {

@@ -21,12 +21,16 @@ export function createMicSource(
   let candidatePc: number | null = null
   let candidateCount = 0
   let quietCount = 0
+  let lastRms = 0
+  let lastGate = 0
+  let lastNote: string | null = null
 
   const notify = () => {
     for (const l of listeners) l()
   }
 
   const clearHeld = () => {
+    lastNote = null
     if (held.length) {
       held = []
       status = 'Listening…'
@@ -56,6 +60,12 @@ export function createMicSource(
     getStatus: () => status,
     getHeldPitchClasses: () => held,
     getHeldMidiNotes: () => [],
+    getMeter: () => ({
+      rms: lastRms,
+      gate: lastGate,
+      note: lastNote,
+      status,
+    }),
     supportsAutomaticGrade: () => true,
     async start() {
       if (disposed) return
@@ -86,6 +96,7 @@ export function createMicSource(
           let sum = 0
           for (let i = 0; i < buf.length; i++) sum += buf[i]! * buf[i]!
           const rms = Math.sqrt(sum / buf.length)
+          lastRms = rms
 
           if (rms < settings.minRms) {
             noiseFloor = noiseFloor * 0.95 + rms * 0.05
@@ -94,6 +105,7 @@ export function createMicSource(
             settings.minRms,
             noiseFloor * settings.noiseGateMult,
           )
+          lastGate = gate
 
           if (rms < gate) {
             quietCount++
@@ -124,6 +136,7 @@ export function createMicSource(
           if (candidateCount >= settings.attackFrames) {
             const changed = held.length !== 1 || held[0] !== pc
             held = [pc]
+            lastNote = NOTE_NAMES[pc] ?? null
             status = `Hearing ${NOTE_NAMES[pc]}`
             if (changed) notify()
           }

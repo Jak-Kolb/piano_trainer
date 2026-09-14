@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createMicSource } from '../input'
 import {
   DEFAULT_MIC_SETTINGS,
   type MicSettings,
@@ -12,9 +13,64 @@ interface Props {
 
 export function SettingsScreen({ initial, onBack, onSave }: Props) {
   const [s, setS] = useState<MicSettings>(initial)
+  const [previewStatus, setPreviewStatus] = useState('Starting mic preview…')
+  const [previewNote, setPreviewNote] = useState<string | null>(null)
+  const [rms, setRms] = useState(0)
+  const [gate, setGate] = useState(0)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const set = <K extends keyof MicSettings>(key: K, value: MicSettings[K]) =>
     setS((prev) => ({ ...prev, [key]: value }))
+
+  // Live mic preview using the *draft* slider values (debounced recreate)
+  useEffect(() => {
+    let cancelled = false
+    let src: ReturnType<typeof createMicSource> | null = null
+    let raf = 0
+    const timer = window.setTimeout(() => {
+      src = createMicSource(s)
+      void src
+        .start()
+        .then(() => {
+          if (cancelled) {
+            src?.dispose()
+            return
+          }
+          setPreviewError(null)
+          const tick = () => {
+            if (cancelled || !src) return
+            const m = src.getMeter()
+            if (m) {
+              setPreviewStatus(m.status)
+              setPreviewNote(m.note)
+              setRms(m.rms)
+              setGate(m.gate)
+            }
+            raf = requestAnimationFrame(tick)
+          }
+          raf = requestAnimationFrame(tick)
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) {
+            setPreviewError(
+              e instanceof Error ? e.message : 'Mic preview unavailable',
+            )
+            setPreviewStatus('Mic unavailable')
+          }
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      if (raf) cancelAnimationFrame(raf)
+      src?.dispose()
+    }
+  }, [s])
+
+  const meterMax = Math.max(0.15, gate * 2, rms * 1.2)
+  const rmsPct = Math.min(100, (rms / meterMax) * 100)
+  const gatePct = Math.min(100, (gate / meterMax) * 100)
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-ink">
@@ -31,11 +87,40 @@ export function SettingsScreen({ initial, onBack, onSave }: Props) {
       </div>
 
       <main className="mx-auto w-full max-w-lg space-y-8 px-6 pb-12">
+        <section className="space-y-3 rounded bg-shadow px-4 py-4">
+          <p className="font-ui text-sm text-dust">Live preview</p>
+          <p
+            className={`font-display text-3xl ${
+              previewNote ? 'text-brass' : 'text-ivory'
+            }`}
+          >
+            {previewNote ? `Hearing ${previewNote}` : previewStatus}
+          </p>
+          <div className="relative h-4 w-full overflow-hidden bg-ink">
+            <div
+              className="absolute inset-y-0 left-0 bg-ivory/40"
+              style={{ width: `${rmsPct}%` }}
+            />
+            <div
+              className="absolute inset-y-0 w-0.5 bg-felt"
+              style={{ left: `${gatePct}%` }}
+              title="Gate"
+            />
+          </div>
+          <p className="font-ui text-xs text-dust">
+            Bar = mic level · red mark = gate (must rise above to count)
+          </p>
+          {previewError && (
+            <p className="font-ui text-sm text-felt">{previewError}</p>
+          )}
+        </section>
+
         <section className="space-y-4">
           <h2 className="font-display text-2xl text-ivory">Microphone</h2>
           <p className="font-ui text-sm text-dust">
             These only affect Mic input. MIDI from the Kawai ignores them.
-            Higher volume / clarity = less false triggers from room noise.
+            Play a note while you move the sliders — the preview uses the draft
+            values before you Save.
           </p>
 
           <Slider
