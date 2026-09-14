@@ -4,7 +4,10 @@ import { midiSetMatch, midiNames } from './noteMatch'
 import { filterNotes, groupSteps } from './parseMidi'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
+import { StaffNotation } from './StaffNotation'
 import type { ParsedPiece, PieceControls } from './types'
+
+type ViewMode = 'staff' | 'roll' | 'both'
 
 interface Props {
   parsed: ParsedPiece
@@ -36,8 +39,11 @@ export function WalkThroughMode({
   )
   const steps = useMemo(() => groupSteps(notes), [notes])
   const [stepIdx, setStepIdx] = useState(0)
+  const [view, setView] = useState<ViewMode>('staff')
   const step = steps[stepIdx]
   const nowSec = step?.[0]?.time ?? 0
+  const measure = step?.[0]?.measure ?? controls.loopStartMeasure
+  const activeMidis = step?.map((n) => n.midi) ?? []
 
   useEffect(() => {
     setStepIdx(0)
@@ -54,9 +60,10 @@ export function WalkThroughMode({
     })
   }, [input, step, steps.length])
 
-  const done = steps.length > 0 && stepIdx >= steps.length - 1 && step
-    ? midiSetMatch(input.getHeldMidiNotes(), step, true)
-    : stepIdx >= steps.length
+  const done =
+    steps.length > 0 && stepIdx >= steps.length - 1 && step
+      ? midiSetMatch(input.getHeldMidiNotes(), step, true)
+      : stepIdx >= steps.length
 
   return (
     <div className="flex h-full flex-col bg-ink">
@@ -67,9 +74,39 @@ export function WalkThroughMode({
         hasTwoHands={parsed.hasTwoHands}
         onChange={onControls}
       />
-      <div className="flex flex-1 flex-col gap-4 px-4 py-4">
-        <PianoRoll notes={notes} nowSec={nowSec} />
-        <div className="flex flex-1 flex-col items-center justify-center">
+      <div className="flex gap-2 px-4 pt-2">
+        {(
+          [
+            ['staff', 'Sheet'],
+            ['roll', 'Roll'],
+            ['both', 'Both'],
+          ] as [ViewMode, string][]
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setView(id)}
+            className={`min-h-12 px-4 font-ui ${
+              view === id ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+        {(view === 'staff' || view === 'both') && (
+          <StaffNotation
+            notes={notes}
+            measure={measure}
+            activeMidis={activeMidis}
+            secPerQuarter={parsed.secPerQuarter}
+          />
+        )}
+        {(view === 'roll' || view === 'both') && (
+          <PianoRoll notes={notes} nowSec={nowSec} />
+        )}
+        <div className="flex flex-col items-center justify-center py-2">
           {steps.length === 0 ? (
             <p className="font-ui text-dust">No notes in this loop / hand filter.</p>
           ) : done && stepIdx >= steps.length - 1 ? (
@@ -77,18 +114,18 @@ export function WalkThroughMode({
           ) : (
             <>
               <p className="font-ui text-sm text-dust">
-                Step {stepIdx + 1} / {steps.length} · bar {step?.[0]?.measure}
+                Step {stepIdx + 1} / {steps.length} · bar {measure}
               </p>
               <p
-                className="mt-4 font-display font-bold text-ivory"
-                style={{ fontSize: '12vh' }}
+                className="mt-2 font-display font-bold text-ivory"
+                style={{ fontSize: '8vh' }}
               >
                 {step ? midiNames(step.map((n) => n.midi)) : '—'}
               </p>
-              <p className="mt-4 font-ui text-dust">
+              <p className="mt-2 font-ui text-dust">
                 {input.id === 'midi'
-                  ? 'Play these notes on the Kawai'
-                  : 'Switch to MIDI input to auto-advance'}
+                  ? 'Play the highlighted notes on the Kawai'
+                  : 'Switch to MIDI for auto-advance — or use Skip'}
               </p>
             </>
           )}
