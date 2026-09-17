@@ -1,12 +1,14 @@
 import { playPianoNotes } from './pianoPlayer'
 import type { PieceNote } from './types'
 
-/** Schedule piano demo notes; returns stop(). */
+/** Schedule piano demo notes; returns stop/pause/resume. */
 export async function playNotesDemo(
   notes: PieceNote[],
   tempoPercent: number,
 ): Promise<{
   stop: () => void
+  pause: () => void
+  resume: () => void
   originSec: number
   endSec: number
   startedAt: number

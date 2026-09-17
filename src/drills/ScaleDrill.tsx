@@ -149,18 +149,6 @@ export function ScaleDrill({
         return
       }
 
-      if (input.id === 'mic') {
-        const pcs = input.getHeldPitchClasses()
-        if (held.includes(current.midi)) {
-          advanceFromMatch()
-        } else if (
-          held.length === 0 &&
-          pcs.length === 1 &&
-          pcs[0] === ((current.midi % 12) + 12) % 12
-        ) {
-          advanceFromMatch()
-        }
-      }
     })
   }, [input, current, done, step, notes.length])
 

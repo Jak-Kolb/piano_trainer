@@ -98,6 +98,8 @@ export async function playPianoNotes(
   tempoPercent: number,
 ): Promise<{
   stop: () => void
+  pause: () => void
+  resume: () => void
   originSec: number
   endSec: number
   startedAt: number
@@ -150,9 +152,11 @@ export async function playPianoNotes(
   const startedAt = performance.now() + leadSec * 1000
 
   let stopped = false
+  let paused = false
   const stop = () => {
     if (stopped) return
     stopped = true
+    paused = false
     try {
       part.stop()
       part.dispose()
@@ -166,7 +170,20 @@ export async function playPianoNotes(
     Tone.Transport.seconds = 0
   }
 
-  return { stop, originSec, endSec, startedAt }
+  const pause = () => {
+    if (stopped || paused) return
+    paused = true
+    Tone.Transport.pause()
+    s.releaseAll()
+  }
+
+  const resume = () => {
+    if (stopped || !paused) return
+    paused = false
+    Tone.Transport.start()
+  }
+
+  return { stop, pause, resume, originSec, endSec, startedAt }
 }
 
 /** Warm the sampler (first Play is snappier). */

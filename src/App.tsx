@@ -22,10 +22,10 @@ import { PiecesLibrary } from './screens/PiecesLibrary'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SkillsScreen } from './screens/SkillsScreen'
 import {
-  loadMicSettings,
-  saveMicSettings,
-  type MicSettings,
-} from './settings/micSettings'
+  applyColorProfile,
+  loadColorProfileId,
+  type ColorProfileId,
+} from './settings/colorProfile'
 
 type Nav =
   | { screen: 'home' }
@@ -41,13 +41,16 @@ export default function App() {
   const [status, setStatus] = useState('…')
   const [startError, setStartError] = useState<string | null>(null)
   const [nav, setNav] = useState<Nav>({ screen: 'home' })
-  const [micSettings, setMicSettings] = useState<MicSettings>(() =>
-    loadMicSettings(),
+  const [colorProfile, setColorProfile] = useState<ColorProfileId>(() =>
+    loadColorProfileId(),
   )
-  const [micEpoch, setMicEpoch] = useState(0)
 
   useEffect(() => {
-    const src = createInputSource(mode, micSettings)
+    applyColorProfile(colorProfile)
+  }, [colorProfile])
+
+  useEffect(() => {
+    const src = createInputSource(mode)
     setInput(src)
     setStatus(src.getStatus())
     setStartError(null)
@@ -60,7 +63,7 @@ export default function App() {
       unsub()
       src.dispose()
     }
-  }, [mode, micSettings, micEpoch])
+  }, [mode])
 
   const selectMode = (next: InputModeId) => {
     saveInputMode(next)
@@ -75,13 +78,7 @@ export default function App() {
     const back = () => setNav({ screen: 'skills' })
     switch (nav.id) {
       case 'triad-recall':
-        return (
-          <TriadRecall
-            input={input}
-            micFallsBackToSelfReport={mode === 'mic'}
-            onExit={back}
-          />
-        )
+        return <TriadRecall input={input} onExit={back} />
       case 'inversions':
         return <InversionDrill input={input} onExit={back} />
       case 'slash-chords':
@@ -138,14 +135,9 @@ export default function App() {
   if (nav.screen === 'settings') {
     return (
       <SettingsScreen
-        initial={micSettings}
+        colorProfile={colorProfile}
         onBack={() => setNav({ screen: 'home' })}
-        onSave={(next) => {
-          saveMicSettings(next)
-          setMicSettings(next)
-          setMicEpoch((e) => e + 1)
-          setNav({ screen: 'home' })
-        }}
+        onColorProfile={setColorProfile}
       />
     )
   }

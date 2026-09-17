@@ -1,6 +1,6 @@
 /** Shared input contract — drill logic is identical across modes. */
 
-export type InputModeId = 'midi' | 'mic' | 'self-report'
+export type InputModeId = 'midi' | 'self-report'
 
 export type GradeResult = 'correct' | 'incorrect' | 'pending'
 

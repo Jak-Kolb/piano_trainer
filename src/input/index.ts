@@ -1,6 +1,5 @@
 export type { GradeResult, InputModeId, InputSource, MicMeter } from './types'
 export { createSelfReportSource } from './SelfReportSource'
-export { createMicSource } from './MicSource'
 export { createMidiSource, midiSupported } from './MidiSource'
 export {
   INPUT_MODE_OPTIONS,

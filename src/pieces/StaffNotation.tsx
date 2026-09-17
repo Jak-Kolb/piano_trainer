@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   Accidental,
   Barline,
@@ -26,6 +26,7 @@ import {
   restDurationsForBeats,
   type VexDuration,
 } from './midiToVex'
+import { sheetThemeColors } from '../settings/colorProfile'
 
 /** @deprecated Prefer barsPerSystem(beatsPerBar) — kept for callers. */
 export const BARS_PER_SYSTEM = 6
@@ -117,7 +118,11 @@ function vexDurationString(dur: VexDuration, rest: boolean): string {
   return rest ? `${dur.key}${dots}r` : `${dur.key}${dots}`
 }
 
-function makeRest(clef: 'treble' | 'bass', dur: VexDuration): StaveNote {
+function makeRest(
+  clef: 'treble' | 'bass',
+  dur: VexDuration,
+  colors: ReturnType<typeof sheetThemeColors>,
+): StaveNote {
   const restKey = clef === 'bass' ? 'd/3' : 'b/4'
   const rest = new StaveNote({
     keys: [restKey],
@@ -126,8 +131,17 @@ function makeRest(clef: 'treble' | 'bass', dur: VexDuration): StaveNote {
   })
   // Visual dot (ticks already include it via "qdr" etc.)
   if (dur.dots > 0) Dot.buildAndAttach([rest], { all: true })
-  rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
+  rest.setStyle({ fillStyle: colors.rest, strokeStyle: colors.rest })
   return rest
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  if (h.length !== 6) return `rgba(192, 139, 62, ${alpha})`
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 type Built = {
@@ -150,6 +164,7 @@ function buildVoiceNotes(
   activeNotes: PieceNote[],
   measure: number,
   keySignature: string,
+  colors: ReturnType<typeof sheetThemeColors>,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -164,7 +179,7 @@ function buildVoiceNotes(
     const specs = restDurationsForBeats(beats)
     let placed = 0
     for (const rd of specs) {
-      notes.push(makeRest(clef, rd))
+      notes.push(makeRest(clef, rd, colors))
       sliceGroups.push([])
       placed += rd.beats
     }
@@ -211,11 +226,11 @@ function buildVoiceNotes(
 
     const isActive = isActiveGroup(g, activeNotes)
     sn.setStyle({
-      fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
-      strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
+      fillStyle: isActive ? colors.active : colors.note,
+      strokeStyle: isActive ? colors.active : colors.note,
     })
     sn.setLedgerLineStyle({
-      strokeStyle: isActive ? '#C08B3E' : '#9AA3B5',
+      strokeStyle: isActive ? colors.active : colors.ledger,
       lineWidth: 1.25,
     })
     notes.push(sn)
@@ -228,7 +243,7 @@ function buildVoiceNotes(
 
   // Final safety: still short → whole rest (empty-ish bar)
   if (!notes.length) {
-    notes.push(makeRest(clef, { key: 'w', dots: 0, beats: 4 }))
+    notes.push(makeRest(clef, { key: 'w', dots: 0, beats: 4 }, colors))
     sliceGroups.push([])
   }
 
@@ -269,6 +284,13 @@ export function StaffNotation({
   const scrollAccum = useRef(0)
   const onMeasureScrollRef = useRef(onMeasureScroll)
   onMeasureScrollRef.current = onMeasureScroll
+  const [themeEpoch, setThemeEpoch] = useState(0)
+
+  useEffect(() => {
+    const onTheme = () => setThemeEpoch((n) => n + 1)
+    window.addEventListener('keys-color-profile', onTheme)
+    return () => window.removeEventListener('keys-color-profile', onTheme)
+  }, [])
 
   const BPS = Math.max(3, barsPerLine)
 
@@ -360,11 +382,12 @@ export function StaffNotation({
       const pad = stride
       const height = pad + viewH + stride
 
+      const colors = sheetThemeColors()
       const renderer = new Renderer(el, Renderer.Backends.SVG)
       renderer.resize(width, height)
       const ctx = renderer.getContext()
-      ctx.setFillStyle('#EDE4D3')
-      ctx.setStrokeStyle('#7A8496')
+      ctx.setFillStyle(colors.note)
+      ctx.setStrokeStyle(colors.staff)
 
       const marginLeft = 8
       const usable = width - marginLeft - 8
@@ -389,12 +412,12 @@ export function StaffNotation({
           const x = marginLeft + bi * barW
           if (inSelection(barNum, selection)) {
             ctx.save()
-            ctx.setFillStyle('rgba(192, 139, 62, 0.22)')
+            ctx.setFillStyle(hexToRgba(colors.active, 0.22))
             ctx.fillRect(x, y0, barW, systemH)
             ctx.restore()
           } else if (barNum === measure) {
             ctx.save()
-            ctx.setFillStyle('rgba(192, 139, 62, 0.08)')
+            ctx.setFillStyle(hexToRgba(colors.active, 0.08))
             ctx.fillRect(x, y0, barW, systemH)
             ctx.restore()
           }
@@ -428,7 +451,7 @@ export function StaffNotation({
               }
             }
             stave.setEndBarType(Barline.type.SINGLE)
-            stave.setStyle({ fillStyle: '#7A8496', strokeStyle: '#7A8496', lineWidth: 1 })
+            stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
             const built = buildVoiceNotes(
@@ -438,6 +461,7 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
+              colors,
             )
             staves.push({ clef: 'treble', stave, built })
           }
@@ -451,7 +475,7 @@ export function StaffNotation({
               }
             }
             stave.setEndBarType(Barline.type.SINGLE)
-            stave.setStyle({ fillStyle: '#7A8496', strokeStyle: '#7A8496', lineWidth: 1 })
+            stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
             const built = buildVoiceNotes(
@@ -461,6 +485,7 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
+              colors,
             )
             staves.push({ clef: 'bass', stave, built })
           }
@@ -512,7 +537,7 @@ export function StaffNotation({
             const my = showBass ? bassY - 3 : trebleY + STAVE_H - 12
             ctx.save()
             ctx.setFont('Times New Roman', 13, 'italic')
-            ctx.setFillStyle('#C4B8A0')
+            ctx.setFillStyle(colors.dynamic)
             ctx.fillText(mark.label, mx, my)
             ctx.restore()
           }
@@ -586,7 +611,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS])
+  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, themeEpoch])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +

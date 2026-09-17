@@ -7,6 +7,11 @@
   --color-felt: #7A2F3A;
   --color-brass: #C08B3E;
   --color-shadow: #0A1120;
+  --color-staff: #7A8496;
+  --color-rest: #5C6478;
+  --color-active: #C08B3E;
+  --color-ledger: #9AA3B5;
+  --color-dynamic: #C4B8A0;
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
   --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
 }
