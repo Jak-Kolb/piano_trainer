@@ -80,6 +80,8 @@ interface Props {
   keySignature?: string
   /** Bars drawn per staff line (from time signature). */
   barsPerLine?: number
+  /** Beats per bar from the piece time signature (default 4). */
+  beatsPerBar?: number
   /** Light notes on dark paper, or dark notes on light paper. */
   polarity?: SheetPolarity
 }
@@ -170,13 +172,14 @@ function buildVoiceNotes(
   measure: number,
   keySignature: string,
   colors: ReturnType<typeof sheetColorsForPolarity>,
+  beatsPerBar: number,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
   const sliceGroups: NoteSlice[][] = []
   const spq = Math.max(0.01, secPerQuarter)
-  const barStart = barStartSec(measure, spq)
-  const barBeats = 4
+  const barBeats = Math.max(1, beatsPerBar)
+  const barStart = barStartSec(measure, spq, barBeats)
   let cursor = 0 // beats from start of bar (must match Σ glyph beats)
 
   const emitRests = (beats: number) => {
@@ -246,10 +249,9 @@ function buildVoiceNotes(
 
   if (cursor < barBeats - 0.001) emitRests(barBeats - cursor)
 
-  // Final safety: still short → whole rest (empty-ish bar)
+  // Final safety: still empty → rests covering the bar
   if (!notes.length) {
-    notes.push(makeRest(clef, { key: 'w', dots: 0, beats: 4 }, colors))
-    sliceGroups.push([])
+    emitRests(barBeats)
   }
 
   return { notes, sliceGroups }
@@ -277,14 +279,14 @@ export function StaffNotation({
   nowSec,
   keySignature = 'C',
   barsPerLine = 6,
+  beatsPerBar = 4,
   polarity = 'light-on-dark',
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const layout = useRef<{
-    systems: { start: number; top: number; bottom: number }[]
+    systems: { start: number; top: number; bottom: number; barWidths: number[] }[]
     marginLeft: number
-    barW: number
     scrollY: number
   } | null>(null)
   const scrollAccum = useRef(0)
@@ -337,12 +339,14 @@ export function StaffNotation({
       const isBassNote = (n: { track: number; midi: number }) =>
         hands ? n.track === hands.lh : n.midi < 60
 
-      const slices = sliceNotesForTies(notes, secPerQuarter)
+      const bpb = Math.max(1, Math.round(beatsPerBar) || 4)
+
+      const slices = sliceNotesForTies(notes, secPerQuarter, bpb)
       // One mark per real dynamic change in the piece (not per staff line)
       const pieceDynMarks = dynamicMarksForPiece(notes)
 
-      const barStart = barStartSec(measure, secPerQuarter)
-      const barDur = 4 * Math.max(0.01, secPerQuarter)
+      const barStart = barStartSec(measure, secPerQuarter, bpb)
+      const barDur = bpb * Math.max(0.01, secPerQuarter)
       const tPlay =
         nowSec ??
         activeNotes[0]?.time ??
@@ -395,10 +399,31 @@ export function StaffNotation({
       ctx.setFillStyle(colors.note)
       ctx.setStrokeStyle(colors.staff)
 
-      const marginLeft = 8
+            const marginLeft = 8
       const usable = width - marginLeft - 8
-      const barW = usable / BPS
-      const systemsMeta: { start: number; top: number; bottom: number }[] = []
+      const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
+
+      const onsetSlots = (inBarSlices: NoteSlice[], barStartT: number, spq: number): number => {
+        const set = new Set<number>()
+        for (const s of inBarSlices) {
+          if (s.tieFromPrev) continue
+          set.add(Math.round(((s.time - barStartT) / spq) * 4) / 4)
+        }
+        return set.size
+      }
+
+      const barWidthsForSystem = (start: number): number[] => {
+        const weights: number[] = []
+        for (let i = 0; i < BPS; i++) {
+          const barNum = start + i
+          if (barNum > measureCount) break
+          const barStartT = barStartSec(barNum, secPerQuarter, bpb)
+          const inBar = slicesInMeasure(slices, barNum)
+          weights.push(Math.max(3, onsetSlots(inBar, barStartT, Math.max(0.01, secPerQuarter))))
+        }
+        const sum = weights.reduce((a, b) => a + b, 0) || 1
+        return weights.map((w) => (usable * w) / sum)
+      }
 
       type TieKey = string
       const placed = new Map<
@@ -411,20 +436,23 @@ export function StaffNotation({
           { length: BPS },
           (_, i) => start + i,
         )
-        systemsMeta.push({ start, top: y0, bottom: y0 + systemH })
+        const barWidths = barWidthsForSystem(start)
+        const barX = (bi: number) =>
+          marginLeft + barWidths.slice(0, bi).reduce((a, w) => a + w, 0)
+        systemsMeta.push({ start, top: y0, bottom: y0 + systemH, barWidths })
 
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
-          const x = marginLeft + bi * barW
+          const x = barX(bi)
           if (inSelection(barNum, selection)) {
             ctx.save()
             ctx.setFillStyle(hexToRgba(colors.active, 0.22))
-            ctx.fillRect(x, y0, barW, systemH)
+            ctx.fillRect(x, y0, barWidths[bi]!, systemH)
             ctx.restore()
           } else if (barNum === measure) {
             ctx.save()
             ctx.setFillStyle(hexToRgba(colors.active, 0.08))
-            ctx.fillRect(x, y0, barW, systemH)
+            ctx.fillRect(x, y0, barWidths[bi]!, systemH)
             ctx.restore()
           }
         })
@@ -442,14 +470,14 @@ export function StaffNotation({
         // so the same beat lines up vertically across clefs.
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
-          const x = marginLeft + bi * barW
-          const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
+          const x = barX(bi)
+          const inner = Math.max(50, barWidths[bi]! - (bi === 0 ? 40 : 18))
 
           const staves: { clef: 'treble' | 'bass'; stave: Stave; built: Built }[] =
             []
 
           if (showTreble) {
-            const stave = new Stave(x, trebleY, barW)
+            const stave = new Stave(x, trebleY, barWidths[bi]!)
             if (bi === 0) {
               stave.addClef('treble')
               if (keySignature && keySignature !== 'C') {
@@ -468,12 +496,13 @@ export function StaffNotation({
               barNum,
               keySignature,
               colors,
+              bpb,
             )
             staves.push({ clef: 'treble', stave, built })
           }
 
           if (showBass) {
-            const stave = new Stave(x, bassY, barW)
+            const stave = new Stave(x, bassY, barWidths[bi]!)
             if (bi === 0) {
               stave.addClef('bass')
               if (keySignature && keySignature !== 'C') {
@@ -492,6 +521,7 @@ export function StaffNotation({
               barNum,
               keySignature,
               colors,
+              bpb,
             )
             staves.push({ clef: 'bass', stave, built })
           }
@@ -499,7 +529,7 @@ export function StaffNotation({
           const voices: Voice[] = []
           for (const row of staves) {
             const voice = new Voice({
-              num_beats: 4,
+              num_beats: bpb,
               beat_value: 4,
             }).setStrict(false)
             voice.addTickables(row.built.notes)
@@ -608,7 +638,6 @@ export function StaffNotation({
           bottom: s.bottom - pad,
         })),
         marginLeft,
-        barW,
         scrollY: scrollPos * stride,
       }
     }
@@ -617,7 +646,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, themeEpoch, polarity])
+  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, beatsPerBar, themeEpoch, polarity])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
@@ -633,10 +662,20 @@ export function StaffNotation({
     const rect = box.getBoundingClientRect()
     const x = e.clientX - rect.left - lay.marginLeft
     const y = e.clientY - rect.top
-    if (x < 0 || x > lay.barW * BPS) return
     const sys = lay.systems.find((s) => y >= s.top && y < s.bottom)
     if (!sys) return
-    const bi = Math.min(BPS - 1, Math.floor(x / lay.barW))
+    const widths = sys.barWidths
+    const totalW = widths.reduce((a, w) => a + w, 0)
+    if (x < 0 || x > totalW) return
+    let acc = 0
+    let bi = widths.length - 1
+    for (let i = 0; i < widths.length; i++) {
+      acc += widths[i]!
+      if (x < acc) {
+        bi = i
+        break
+      }
+    }
     const bar = sys.start + bi
     if (bar < 1 || bar > measureCount) return
     onMeasurePointer(bar, e.shiftKey)
