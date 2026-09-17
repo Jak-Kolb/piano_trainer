@@ -25,6 +25,16 @@ export interface StoredPiece {
   hasTwoHands: boolean
 }
 
+/** Absolute timing for one bar (handles tempo + time-sig changes). */
+export interface MeasureInfo {
+  /** Absolute start time (seconds) */
+  startSec: number
+  /** Bar length in seconds */
+  durationSec: number
+  /** Numerator for this bar (3 or 4 etc.) */
+  beatsPerBar: number
+}
+
 export interface ParsedPiece {
   notes: PieceNote[]
   durationSec: number
@@ -35,8 +45,14 @@ export interface ParsedPiece {
   secPerQuarter: number
   /** VexFlow key name, e.g. "G" or "Em". Defaults to "C". */
   keySignature: string
-  /** Time-signature numerator (beats per bar), e.g. 4 in 4/4. */
+  /** Time-signature numerator of the *first* bar (for barsPerSystem). */
   beatsPerBar: number
+  /**
+   * Per-measure timeline. Index 0 = measure 1.
+   * Built from Tone ticksToMeasures / ticksToSeconds so bar starts
+   * stay correct across tempo and meter changes.
+   */
+  measures: MeasureInfo[]
 }
 
 export interface PieceControls {

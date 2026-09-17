@@ -1,5 +1,79 @@
 import { Midi } from '@tonejs/midi'
-import type { ParsedPiece, PieceNote } from './types'
+import type { MeasureInfo, ParsedPiece, PieceNote } from './types'
+
+type MidiHeader = Midi['header']
+
+/**
+ * Smallest tick where ticksToMeasures(tick) >= barIndex (Tone 0-based bars).
+ */
+function barStartTick(
+  header: MidiHeader,
+  barIndex: number,
+  maxTickHint: number,
+): number {
+  if (barIndex <= 0) return 0
+  let hi = Math.max(maxTickHint, header.ppq * 4)
+  // Grow until the tick is past the target bar.
+  while (header.ticksToMeasures(hi) < barIndex && hi < 1e12) {
+    hi = Math.max(hi * 2, hi + header.ppq * 64)
+  }
+  let lo = 0
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (header.ticksToMeasures(mid) >= barIndex) hi = mid
+    else lo = mid + 1
+  }
+  return lo
+}
+
+function beatsPerBarAtTick(header: MidiHeader, tick: number): number {
+  const tss = header.timeSignatures
+  if (!tss.length) return 4
+  let beats = tss[0]!.timeSignature[0] || 4
+  for (const ts of tss) {
+    if (ts.ticks <= tick) beats = ts.timeSignature[0] || 4
+    else break
+  }
+  return Math.max(1, beats)
+}
+
+/**
+ * Build one MeasureInfo per displayed measure (index 0 = measure 1).
+ * Uses Tone's ticksToMeasures / ticksToSeconds so tempo and meter changes
+ * produce real wall-clock bar starts (not first-tempo * constant meter).
+ */
+export function buildMeasureTimeline(
+  header: MidiHeader,
+  measureCount: number,
+  durationSec: number,
+): MeasureInfo[] {
+  const count = Math.max(1, measureCount)
+  const maxTickHint = Math.max(
+    header.ppq * 4,
+    header.secondsToTicks(Math.max(durationSec, 0.01)) + header.ppq * 16,
+  )
+  const starts: number[] = []
+  for (let b = 0; b <= count; b++) {
+    starts.push(barStartTick(header, b, maxTickHint))
+  }
+  const measures: MeasureInfo[] = []
+  for (let i = 0; i < count; i++) {
+    const startTick = starts[i]!
+    const endTick = starts[i + 1]!
+    const startSec = header.ticksToSeconds(startTick)
+    let endSec = header.ticksToSeconds(endTick)
+    // Last bar: if next-bar search collapsed (identical tick), fall back to piece end.
+    if (endSec <= startSec + 1e-6) {
+      endSec = Math.max(durationSec, startSec + 0.01)
+    }
+    measures.push({
+      startSec,
+      durationSec: Math.max(0.01, endSec - startSec),
+      beatsPerBar: beatsPerBarAtTick(header, startTick),
+    })
+  }
+  return measures
+}
 
 export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiece> {
   const midi = new Midi(buf)
@@ -36,11 +110,21 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
   const durationSec =
     notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0) || midi.duration
 
-  const measureCount = Math.max(
-    1,
-    ...notes.map((n) => n.measure),
-    Math.ceil(durationSec / (secPerQuarter * beatsPerBar)),
-  )
+  // Prefer Tone bar indices over first-tempo * first-meter estimates.
+  let maxToneBar = 0
+  for (const n of notes) {
+    maxToneBar = Math.max(maxToneBar, n.measure)
+  }
+  // Include bars covered by note sustains (end of last sounding note).
+  if (durationSec > 0) {
+    const endBars = midi.header.ticksToMeasures(
+      midi.header.secondsToTicks(durationSec),
+    )
+    maxToneBar = Math.max(maxToneBar, Math.ceil(endBars))
+  }
+  const measureCount = Math.max(1, maxToneBar)
+
+  const measures = buildMeasureTimeline(midi.header, measureCount, durationSec)
 
   const activeTracks = new Set(notes.map((n) => n.track))
   const hasTwoHands = activeTracks.size >= 2
@@ -71,6 +155,7 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
     secPerQuarter,
     keySignature,
     beatsPerBar,
+    measures,
   }
 }
 
