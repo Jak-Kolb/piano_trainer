@@ -265,15 +265,15 @@ body {
 }
 
 .btn-secondary {
-  background: rgba(26, 36, 56, 0.9);
+  background: var(--color-panel);
   color: var(--color-ivory);
   border-color: var(--color-panel-border);
-  box-shadow: 0 1px 0 rgba(243, 234, 217, 0.04) inset;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-ivory) 8%, transparent) inset;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  border-color: rgba(139, 147, 167, 0.45);
-  background: rgba(32, 44, 68, 0.95);
+  border-color: color-mix(in srgb, var(--color-dust) 55%, transparent);
+  background: color-mix(in srgb, var(--color-panel) 88%, var(--color-ivory) 12%);
 }
 
 .btn-ghost {
@@ -284,7 +284,7 @@ body {
 
 .btn-ghost:hover:not(:disabled) {
   color: var(--color-ivory);
-  background: rgba(243, 234, 217, 0.05);
+  background: color-mix(in srgb, var(--color-ivory) 8%, transparent);
 }
 
 .btn-danger {
@@ -308,7 +308,7 @@ body {
 }
 
 .btn-chip-idle {
-  background: rgba(18, 26, 43, 0.95);
+  background: var(--color-panel);
   color: var(--color-dust);
   border-color: var(--color-panel-border);
 }
