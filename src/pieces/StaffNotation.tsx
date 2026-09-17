@@ -294,45 +294,83 @@ export function StaffNotation({
           }
         })
 
-        const drawRow = (
-          clef: 'treble' | 'bass',
-          y: number,
-          pred: (n: { track: number; midi: number }) => boolean,
-        ) => {
-          let x = marginLeft
-          const rowTies: { first: StaveNote; last: StaveNote; fi: number; li: number }[] = []
+        const trebleY = y0 + 4
+        const bassY = trebleY + (showTreble ? STAVE_H : 0)
+        const rowTies: {
+          first: StaveNote
+          last: StaveNote
+          fi: number
+          li: number
+        }[] = []
 
-          bars.forEach((barNum, bi) => {
-            const stave = new Stave(x, y, barW)
-            if (bi === 0) stave.addClef(clef)
+        // Draw each bar as a grand-staff unit: format treble+bass together
+        // so the same beat lines up vertically across clefs.
+        bars.forEach((barNum, bi) => {
+          if (barNum > measureCount) return
+          const x = marginLeft + bi * barW
+          const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
+
+          const staves: { clef: 'treble' | 'bass'; stave: Stave; built: Built }[] =
+            []
+
+          if (showTreble) {
+            const stave = new Stave(x, trebleY, barW)
+            if (bi === 0) stave.addClef('treble')
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
             stave.setContext(ctx).draw()
-
-            const inBar =
-              barNum <= measureCount
-                ? slicesInMeasure(slices, barNum).filter(pred)
-                : []
+            const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
             const built = buildVoiceNotes(
               inBar,
-              clef,
+              'treble',
               secPerQuarter,
               activeNotes,
               barNum,
             )
+            staves.push({ clef: 'treble', stave, built })
+          }
+
+          if (showBass) {
+            const stave = new Stave(x, bassY, barW)
+            if (bi === 0) stave.addClef('bass')
+            stave.setEndBarType(Barline.type.SINGLE)
+            stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
+            stave.setContext(ctx).draw()
+            const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
+            const built = buildVoiceNotes(
+              inBar,
+              'bass',
+              secPerQuarter,
+              activeNotes,
+              barNum,
+            )
+            staves.push({ clef: 'bass', stave, built })
+          }
+
+          const voices: Voice[] = []
+          for (const row of staves) {
             const voice = new Voice({
               num_beats: 4,
               beat_value: 4,
             }).setStrict(false)
-            voice.addTickables(built.notes)
-            const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
-            new Formatter().joinVoices([voice]).format([voice], inner)
-            voice.draw(ctx, stave)
+            voice.addTickables(row.built.notes)
+            voices.push(voice)
+          }
 
-            built.sliceGroups.forEach((g, gi) => {
-              const sn = built.notes[gi]!
+          if (voices.length) {
+            const fmt = new Formatter()
+            fmt.joinVoices(voices)
+            fmt.format(voices, inner)
+            staves.forEach((row, i) => {
+              voices[i]!.draw(ctx, row.stave)
+            })
+          }
+
+          for (const row of staves) {
+            row.built.sliceGroups.forEach((g, gi) => {
+              const sn = row.built.notes[gi]!
               g.forEach((slice, ki) => {
-                const key = `${clef}:${slice.id}`
+                const key = `${row.clef}:${slice.id}`
                 const prev = placed.get(key)
                 if (slice.tieFromPrev && prev) {
                   rowTies.push({
@@ -345,44 +383,36 @@ export function StaffNotation({
                 placed.set(key, { sn, index: ki, measure: barNum })
               })
             })
-
-            if (barNum === measure) {
-              ctx.save()
-              ctx.setStrokeStyle('#C08B3E')
-              ctx.setLineWidth(3)
-              ctx.beginPath()
-              ctx.moveTo(x + 3, y + 8)
-              ctx.lineTo(x + 3, y + STAVE_H - 10)
-              ctx.stroke()
-              ctx.restore()
-            }
-
-            x += barW
-          })
-
-          for (const t of rowTies) {
-            try {
-              new StaveTie({
-                first_note: t.first,
-                last_note: t.last,
-                first_indices: [t.fi],
-                last_indices: [t.li],
-              })
-                .setContext(ctx)
-                .draw()
-            } catch {
-              /* ignore tie draw failures */
-            }
           }
-        }
 
-        let y = y0 + 4
-        if (showTreble) {
-          drawRow('treble', y, isTrebleNote)
-          y += STAVE_H
-        }
-        if (showBass) {
-          drawRow('bass', y, isBassNote)
+          if (barNum === measure) {
+            ctx.save()
+            ctx.setStrokeStyle('#C08B3E')
+            ctx.setLineWidth(3)
+            ctx.beginPath()
+            const top = showTreble ? trebleY + 8 : bassY + 8
+            const bot =
+              (showBass ? bassY : trebleY) + STAVE_H - 10
+            ctx.moveTo(x + 3, top)
+            ctx.lineTo(x + 3, bot)
+            ctx.stroke()
+            ctx.restore()
+          }
+        })
+
+        for (const t of rowTies) {
+          try {
+            new StaveTie({
+              first_note: t.first,
+              last_note: t.last,
+              first_indices: [t.fi],
+              last_indices: [t.li],
+            })
+              .setContext(ctx)
+              .draw()
+          } catch {
+            /* ignore tie draw failures */
+          }
         }
       }
 
