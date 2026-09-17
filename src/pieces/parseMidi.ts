@@ -26,6 +26,7 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
         duration: Math.max(0.05, n.duration),
         track: trackIndex,
         measure,
+        velocity: typeof n.velocity === 'number' ? n.velocity : 0.7,
       })
     }
   })

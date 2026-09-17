@@ -69,6 +69,7 @@ export async function playMidiDemo(
     duration: durationSec,
     track: 0,
     measure: 0,
+    velocity: 0.75,
   }))
   const { stop } = await playPianoNotes(pieceNotes, 100)
   return { stop }
@@ -85,6 +86,7 @@ export async function playSequenceDemo(
     duration: noteSec * 1.1,
     track: 0,
     measure: 0,
+    velocity: 0.75,
   }))
   const { stop } = await playPianoNotes(pieceNotes, 100)
   return { stop }

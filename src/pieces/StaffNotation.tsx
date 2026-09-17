@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import {
   Accidental,
+  Annotation,
   Barline,
   Dot,
   Formatter,
@@ -19,6 +20,7 @@ import {
 } from './tieSlices'
 import type { PieceNote } from './types'
 import { writtenAccidental } from './keySig'
+import { meanVelocity, velocityToDynamic } from './dynamics'
 import {
   durationToVex,
   midiToVexKey,
@@ -144,6 +146,8 @@ function buildVoiceNotes(
   activeNotes: PieceNote[],
   measure: number,
   keySignature: string,
+  /** Last dynamic label drawn on this clef (mutated when a new mark is placed). */
+  dynState: { last: string | null },
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -202,6 +206,21 @@ function buildVoiceNotes(
     })
     // Dot modifier is visual only; timing comes from "qd" duration above
     if (dur.dots > 0) Dot.buildAndAttach([sn], { all: true })
+
+    // Dynamics (mp / mf / …) when this clef's loudness band changes
+    const fresh = g.filter((s) => !s.tieFromPrev)
+    if (fresh.length) {
+      const label = velocityToDynamic(meanVelocity(fresh))
+      if (label !== dynState.last) {
+        dynState.last = label
+        const ann = new Annotation(label)
+        ann.setFont('Times New Roman', 13, 'italic')
+        ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM)
+        ann.setStyle({ fillStyle: '#C4B8A0', strokeStyle: '#C4B8A0' })
+        sn.addModifier(ann, 0)
+      }
+    }
+
     const isActive = isActiveGroup(g, activeNotes)
     sn.setStyle({
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
@@ -395,6 +414,9 @@ export function StaffNotation({
           fi: number
           li: number
         }[] = []
+        // Reset each system so the opening dynamic is visible on every line
+        const dynTreble = { last: null as string | null }
+        const dynBass = { last: null as string | null }
 
         // Draw each bar as a grand-staff unit: format treble+bass together
         // so the same beat lines up vertically across clefs.
@@ -425,6 +447,7 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
+              dynTreble,
             )
             staves.push({ clef: 'treble', stave, built })
           }
@@ -448,6 +471,7 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
+              dynBass,
             )
             staves.push({ clef: 'bass', stave, built })
           }

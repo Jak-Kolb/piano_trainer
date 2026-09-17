@@ -117,11 +117,13 @@ export async function playPianoNotes(
       MAX_VOICE_SEC,
       Math.max(0.08, n.duration / tempoFactor),
     )
+    // MIDI velocity → audible dynamics (keep a floor so pp still speaks)
+    const vel = Math.max(0.22, Math.min(0.95, (n.velocity ?? 0.7) * 0.9))
     return {
       time: t,
       note: midiToNoteName(n.midi),
       dur,
-      vel: 0.62,
+      vel,
     }
   })
 
