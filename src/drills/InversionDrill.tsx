@@ -148,7 +148,7 @@ export function InversionDrill({
       onExit={onExit}
       banner={
         flash === 'hit' ? (
-          <p className="bg-brass px-4 py-2 text-center font-ui text-ink">Hit</p>
+          <p className="bg-brass px-4 py-2 text-center font-ui text-on-accent">Hit</p>
         ) : flash === 'miss' ? (
           <p className="bg-felt px-4 py-2 text-center font-ui text-ivory">Miss</p>
         ) : undefined

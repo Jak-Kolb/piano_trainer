@@ -292,7 +292,7 @@ export function ScaleDrill({
           <span
             key={`${i}-${formatPitch(n)}`}
             className={`flex min-h-16 min-w-14 flex-col items-center justify-center px-2 font-display ${
-              i === step ? 'rounded-[var(--radius-md)] bg-brass text-ink' : 'surface-panel text-ivory'
+              i === step ? 'rounded-[var(--radius-md)] bg-brass text-on-accent' : 'surface-panel text-ivory'
             }`}
           >
             <span className="text-lg">{formatPitch(n)}</span>

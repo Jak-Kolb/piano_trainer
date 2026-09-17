@@ -210,7 +210,7 @@ export function SightReadingDrill({
             key={`${n}-${i}`}
             className={`flex h-24 w-20 items-center justify-center font-display text-4xl ${
               phase === 'run' && i === step
-                ? 'bg-brass text-ink'
+                ? 'bg-brass text-on-accent'
                 : phase === 'run' && i < step
                   ? 'bg-brass/40 text-ivory'
                   : 'bg-shadow text-ivory'
