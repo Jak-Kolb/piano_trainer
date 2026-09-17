@@ -275,7 +275,7 @@ export function WalkThroughMode({
         hasTwoHands={parsed.hasTwoHands}
         onChange={onControls}
       />
-      <div className="flex flex-wrap gap-2 px-4 pt-2">
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-1">
         {(
           [
             ['staff', 'Sheet'],
@@ -287,54 +287,54 @@ export function WalkThroughMode({
             key={id}
             type="button"
             onClick={() => setView(id)}
-            className={`min-h-12 px-4 font-ui ${
+            className={`min-h-9 px-3 text-sm font-ui ${
               view === id ? 'bg-brass text-ink' : 'bg-shadow text-dust'
             }`}
           >
             {label}
           </button>
         ))}
-        <span className="mx-1 w-px self-stretch bg-dust/30" />
+        <span className="mx-1 h-5 w-px bg-dust/30" />
         {demo ? (
           <button
             type="button"
             onClick={stopDemo}
-            className="min-h-12 bg-felt px-4 font-ui text-ivory"
+            className="min-h-9 bg-felt px-3 text-sm font-ui text-ivory"
           >
-            Stop demo
+            Stop
           </button>
         ) : demoLoading ? (
           <button
             type="button"
             disabled
-            className="min-h-12 bg-shadow px-4 font-ui text-dust"
+            className="min-h-9 bg-shadow px-3 text-sm font-ui text-dust"
           >
-            Loading piano…
+            Loading…
           </button>
         ) : (
           <>
             <button
               type="button"
               onClick={() => void startDemo('line')}
-              className="min-h-12 bg-shadow px-4 font-ui text-ivory"
+              className="min-h-9 bg-shadow px-3 text-sm font-ui text-ivory"
             >
-              Play line ({lineStart}–{lineEnd})
+              Play line
             </button>
             <button
               type="button"
               onClick={() => void startDemo('bar')}
-              className="min-h-12 bg-shadow px-4 font-ui text-ivory"
+              className="min-h-9 bg-shadow px-3 text-sm font-ui text-ivory"
             >
-              Play bar {displayMeasure}
+              Play bar
             </button>
             {selLo != null && selHi != null && (
               <button
                 type="button"
                 onClick={() => void startDemo('selection')}
-                className="min-h-12 bg-brass px-4 font-ui text-ink"
+                className="min-h-9 bg-brass px-3 text-sm font-ui text-ink"
               >
-                Play selected ({selLo}
-                {selHi !== selLo ? `–${selHi}` : ''})
+                Play sel {selLo}
+                {selHi !== selLo ? `–${selHi}` : ''}
               </button>
             )}
             {selection && (
@@ -344,15 +344,15 @@ export function WalkThroughMode({
                   setSelection(null)
                   selectAnchor.current = null
                 }}
-                className="min-h-12 bg-shadow px-3 font-ui text-dust"
+                className="min-h-9 bg-shadow px-2 text-sm font-ui text-dust"
               >
-                Clear select
+                Clear
               </button>
             )}
           </>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3 py-2">
         {(view === 'staff' || view === 'both') && (
           <StaffNotation
             notes={notes}
@@ -367,58 +367,51 @@ export function WalkThroughMode({
         {(view === 'roll' || view === 'both') && (
           <PianoRoll notes={notes} nowSec={nowSec} />
         )}
-        <div className="flex flex-col items-center justify-center py-2">
+        <div className="flex flex-col items-center justify-center py-1">
           {steps.length === 0 ? (
-            <p className="font-ui text-dust">No notes in this loop / hand filter.</p>
+            <p className="font-ui text-sm text-dust">No notes in this loop / hand filter.</p>
           ) : done ? (
-            <p className="font-display text-4xl text-brass">Loop complete</p>
+            <p className="font-display text-2xl text-brass">Loop complete</p>
           ) : (
             <>
-              <p className="font-ui text-sm text-dust">
-                {demo ? 'Demo' : 'Your turn'} · Step {stepIdx + 1} / {steps.length} ·
+              <p className="font-ui text-xs text-dust">
+                {demo ? 'Demo' : 'Your turn'} · {stepIdx + 1}/{steps.length} ·
                 bar {displayMeasure}
-              </p>
-              <p
-                className="mt-2 font-display font-bold text-ivory"
-                style={{ fontSize: '8vh' }}
-              >
                 {activeNotes.length
-                  ? midiNames(activeNotes.map((n) => n.midi))
-                  : '—'}
-              </p>
-              <p className="mt-2 font-ui text-dust">
+                  ? ` · ${midiNames(activeNotes.map((n) => n.midi))}`
+                  : ''}
                 {demo
-                  ? 'Watch the highlight — this is how it sounds'
+                  ? ' · listening'
                   : input.id === 'midi'
                     ? activeNotes.length > 1
-                      ? `Hold all ${activeNotes.length} notes together`
-                      : 'Play this note on the Kawai'
-                    : 'Switch to MIDI for auto-advance — or use Skip'}
+                      ? ` · hold all ${activeNotes.length}`
+                      : ' · play on Kawai'
+                    : ' · MIDI or Skip'}
               </p>
             </>
           )}
         </div>
-        <div className="flex flex-wrap gap-3 pb-4">
+        <div className="flex flex-wrap gap-1.5 pb-2">
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-16 flex-1 bg-shadow font-ui text-ivory disabled:opacity-40"
+            className="min-h-10 flex-1 bg-shadow text-sm font-ui text-ivory disabled:opacity-40"
             onClick={jumpSongStart}
           >
-            Song start
+            Song
           </button>
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-16 flex-1 bg-shadow font-ui text-ivory disabled:opacity-40"
+            className="min-h-10 flex-1 bg-shadow text-sm font-ui text-ivory disabled:opacity-40"
             onClick={jumpBarStart}
           >
-            Bar start
+            Bar
           </button>
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-16 flex-1 bg-shadow font-ui text-ivory disabled:opacity-40"
+            className="min-h-10 flex-1 bg-shadow text-sm font-ui text-ivory disabled:opacity-40"
             onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
           >
             Back
@@ -426,7 +419,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-16 flex-1 bg-brass font-ui text-ink disabled:opacity-40"
+            className="min-h-10 flex-1 bg-brass text-sm font-ui text-ink disabled:opacity-40"
             onClick={() =>
               setStepIdx((i) => Math.min(steps.length - 1, i + 1))
             }
@@ -449,15 +442,15 @@ function Header({
   onExit: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3">
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5">
       <button
         type="button"
         onClick={onExit}
-        className="min-h-12 shrink-0 px-3 font-ui text-dust"
+        className="min-h-9 shrink-0 px-2 text-sm font-ui text-dust"
       >
         Exit
       </button>
-      <p className="truncate font-display text-lg text-ivory">{title}</p>
+      <p className="truncate font-display text-base text-ivory">{title}</p>
       <p className="max-w-[30%] truncate font-ui text-xs text-dust">{status}</p>
     </div>
   )

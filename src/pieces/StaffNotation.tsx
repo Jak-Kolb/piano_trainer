@@ -18,15 +18,15 @@ import {
 } from './midiToVex'
 
 export const BARS_PER_SYSTEM = 8
+const STAVE_H = 95
+const SYSTEM_GAP = 18
 
 interface Props {
   notes: PieceNote[]
   measure: number
-  /** Exact current step notes (match midi + onset time, not every same pitch). */
   activeNotes: PieceNote[]
   secPerQuarter: number
   measureCount: number
-  /** Inclusive selected range, or null. */
   selection: { start: number; end: number } | null
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
 }
@@ -130,7 +130,7 @@ function inSelection(
 }
 
 /**
- * Always draws an 8-bar system. Click a bar to jump; shift-click to select a range.
+ * Draws current 8-bar line + next line. Click / shift-click bars to jump/select.
  */
 export function StaffNotation({
   notes,
@@ -144,10 +144,9 @@ export function StaffNotation({
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const layout = useRef<{
-    start: number
+    systems: { start: number; top: number; bottom: number }[]
     marginLeft: number
     barW: number
-    width: number
   } | null>(null)
 
   useEffect(() => {
@@ -159,22 +158,33 @@ export function StaffNotation({
       el.innerHTML = ''
       const width = Math.max(640, Math.floor(box.clientWidth) || 900)
 
-      const start =
+      const lineStart =
         Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) *
           BARS_PER_SYSTEM +
         1
-      const bars = Array.from({ length: BARS_PER_SYSTEM }, (_, i) => start + i)
+      const systemStarts = [lineStart]
+      if (lineStart + BARS_PER_SYSTEM <= measureCount) {
+        systemStarts.push(lineStart + BARS_PER_SYSTEM)
+      }
 
-      const systemNotes = notes.filter(
-        (n) => n.measure >= bars[0]! && n.measure <= bars[bars.length - 1]!,
+      const windowNotes = notes.filter(
+        (n) =>
+          n.measure >= lineStart &&
+          n.measure < lineStart + BARS_PER_SYSTEM * 2,
       )
       const hasTreble =
-        systemNotes.some((n) => n.midi >= 60) || systemNotes.length === 0
-      const hasBass = systemNotes.some((n) => n.midi < 60)
+        windowNotes.some((n) => n.midi >= 60) || windowNotes.length === 0
+      const hasBass =
+        windowNotes.some((n) => n.midi < 60) ||
+        notes.some((n) => n.midi < 60)
       const showTreble = hasTreble || !hasBass
-      const showBass = hasBass || notes.some((n) => n.midi < 60)
+      const showBass = hasBass
       const rows = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
-      const height = 24 + rows * 110
+      const systemH = 8 + rows * STAVE_H
+      const height =
+        8 +
+        systemStarts.length * systemH +
+        (systemStarts.length - 1) * SYSTEM_GAP
 
       const renderer = new Renderer(el, Renderer.Backends.SVG)
       renderer.resize(width, height)
@@ -185,80 +195,99 @@ export function StaffNotation({
       const marginLeft = 8
       const usable = width - marginLeft - 8
       const barW = usable / BARS_PER_SYSTEM
-      layout.current = { start, marginLeft, barW, width }
+      const systemsMeta: { start: number; top: number; bottom: number }[] = []
 
-      // Selection + current-bar backgrounds (behind staves)
-      bars.forEach((barNum, bi) => {
-        if (barNum > measureCount) return
-        const x = marginLeft + bi * barW
-        if (inSelection(barNum, selection)) {
-          ctx.save()
-          ctx.setFillStyle('rgba(192, 139, 62, 0.22)')
-          ctx.fillRect(x, 4, barW, height - 8)
-          ctx.restore()
-        } else if (barNum === measure) {
-          ctx.save()
-          ctx.setFillStyle('rgba(192, 139, 62, 0.08)')
-          ctx.fillRect(x, 4, barW, height - 8)
-          ctx.restore()
-        }
-      })
+      const drawSystem = (start: number, y0: number) => {
+        const bars = Array.from(
+          { length: BARS_PER_SYSTEM },
+          (_, i) => start + i,
+        )
+        systemsMeta.push({
+          start,
+          top: y0,
+          bottom: y0 + systemH,
+        })
 
-      const drawRow = (
-        clef: 'treble' | 'bass',
-        y: number,
-        pred: (m: number) => boolean,
-      ) => {
-        let x = marginLeft
         bars.forEach((barNum, bi) => {
-          const stave = new Stave(x, y, barW)
-          if (bi === 0) stave.addClef(clef)
-          stave.setEndBarType(Barline.type.SINGLE)
-          stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
-          stave.setContext(ctx).draw()
-
-          const inBar =
-            barNum <= measureCount
-              ? notesInMeasure(notes, barNum).filter((n) => pred(n.midi))
-              : []
-          const vfNotes = buildVoiceNotes(
-            inBar,
-            clef,
-            secPerQuarter,
-            activeNotes,
-          )
-          const voice = new Voice({
-            num_beats: 4,
-            beat_value: 4,
-          }).setStrict(false)
-          voice.addTickables(vfNotes)
-          const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
-          new Formatter().joinVoices([voice]).format([voice], inner)
-          voice.draw(ctx, stave)
-
-          if (barNum === measure) {
+          if (barNum > measureCount) return
+          const x = marginLeft + bi * barW
+          if (inSelection(barNum, selection)) {
             ctx.save()
-            ctx.setStrokeStyle('#C08B3E')
-            ctx.setLineWidth(3)
-            ctx.beginPath()
-            ctx.moveTo(x + 3, y + 8)
-            ctx.lineTo(x + 3, y + 95)
-            ctx.stroke()
+            ctx.setFillStyle('rgba(192, 139, 62, 0.22)')
+            ctx.fillRect(x, y0, barW, systemH)
+            ctx.restore()
+          } else if (barNum === measure) {
+            ctx.save()
+            ctx.setFillStyle('rgba(192, 139, 62, 0.08)')
+            ctx.fillRect(x, y0, barW, systemH)
             ctx.restore()
           }
-
-          x += barW
         })
+
+        const drawRow = (
+          clef: 'treble' | 'bass',
+          y: number,
+          pred: (m: number) => boolean,
+        ) => {
+          let x = marginLeft
+          bars.forEach((barNum, bi) => {
+            const stave = new Stave(x, y, barW)
+            if (bi === 0) stave.addClef(clef)
+            stave.setEndBarType(Barline.type.SINGLE)
+            stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
+            stave.setContext(ctx).draw()
+
+            const inBar =
+              barNum <= measureCount
+                ? notesInMeasure(notes, barNum).filter((n) => pred(n.midi))
+                : []
+            const vfNotes = buildVoiceNotes(
+              inBar,
+              clef,
+              secPerQuarter,
+              activeNotes,
+            )
+            const voice = new Voice({
+              num_beats: 4,
+              beat_value: 4,
+            }).setStrict(false)
+            voice.addTickables(vfNotes)
+            const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
+            new Formatter().joinVoices([voice]).format([voice], inner)
+            voice.draw(ctx, stave)
+
+            if (barNum === measure) {
+              ctx.save()
+              ctx.setStrokeStyle('#C08B3E')
+              ctx.setLineWidth(3)
+              ctx.beginPath()
+              ctx.moveTo(x + 3, y + 8)
+              ctx.lineTo(x + 3, y + STAVE_H - 10)
+              ctx.stroke()
+              ctx.restore()
+            }
+
+            x += barW
+          })
+        }
+
+        let y = y0 + 4
+        if (showTreble) {
+          drawRow('treble', y, (m) => m >= 60)
+          y += STAVE_H
+        }
+        if (showBass) {
+          drawRow('bass', y, (m) => m < 60)
+        }
       }
 
-      let y = 8
-      if (showTreble) {
-        drawRow('treble', y, (m) => m >= 60)
-        y += 110
+      let y = 4
+      for (const start of systemStarts) {
+        drawSystem(start, y)
+        y += systemH + SYSTEM_GAP
       }
-      if (showBass) {
-        drawRow('bass', y, (m) => m < 60)
-      }
+
+      layout.current = { systems: systemsMeta, marginLeft, barW }
     }
 
     draw()
@@ -267,10 +296,13 @@ export function StaffNotation({
     return () => ro.disconnect()
   }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection])
 
-  const start =
+  const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM +
     1
-  const end = start + BARS_PER_SYSTEM - 1
+  const lineEnd = lineStart + BARS_PER_SYSTEM - 1
+  const nextStart = lineStart + BARS_PER_SYSTEM
+  const nextEnd = Math.min(measureCount, nextStart + BARS_PER_SYSTEM - 1)
+  const hasNext = nextStart <= measureCount
 
   const handleClick = (e: MouseEvent) => {
     const lay = layout.current
@@ -278,9 +310,12 @@ export function StaffNotation({
     if (!lay || !box) return
     const rect = box.getBoundingClientRect()
     const x = e.clientX - rect.left - lay.marginLeft
+    const y = e.clientY - rect.top
     if (x < 0 || x > lay.barW * BARS_PER_SYSTEM) return
+    const sys = lay.systems.find((s) => y >= s.top && y < s.bottom)
+    if (!sys) return
     const bi = Math.min(BARS_PER_SYSTEM - 1, Math.floor(x / lay.barW))
-    const bar = lay.start + bi
+    const bar = sys.start + bi
     if (bar < 1 || bar > measureCount) return
     onMeasurePointer(bar, e.shiftKey)
   }
@@ -289,22 +324,22 @@ export function StaffNotation({
     selection &&
     (selection.start === selection.end
       ? ` · selected bar ${selection.start}`
-      : ` · selected bars ${Math.min(selection.start, selection.end)}–${Math.max(selection.start, selection.end)}`)
+      : ` · selected ${Math.min(selection.start, selection.end)}–${Math.max(selection.start, selection.end)}`)
 
   return (
     <div
       ref={wrap}
-      className="w-full cursor-pointer rounded bg-shadow px-2 py-2"
+      className="w-full cursor-pointer rounded bg-shadow px-2 py-1"
       onClick={handleClick}
       title="Click a bar to jump · Shift-click to select a range"
     >
-      <div ref={host} className="w-full" style={{ minHeight: 200 }} />
-      <p className="pb-2 text-center font-ui text-sm text-dust">
-        Line: bars {start}–{end} (playing bar {measure})
+      <div ref={host} className="w-full" />
+      <p className="pb-1 text-center font-ui text-xs text-dust">
+        Bars {lineStart}–{lineEnd}
+        {hasNext ? ` + next ${nextStart}–${nextEnd}` : ''}
+        {' · '}playing {measure}
         {selLabel ?? ''}
-      </p>
-      <p className="pb-1 text-center font-ui text-xs text-dust/80">
-        Click bar to jump · Shift-click range to select
+        {' · '}click / shift-click
       </p>
     </div>
   )

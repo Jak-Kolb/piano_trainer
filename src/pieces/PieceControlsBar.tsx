@@ -17,7 +17,7 @@ export function PieceControlsBar({
     onChange({ ...controls, ...patch })
 
   return (
-    <div className="w-full space-y-3 border-b border-dust/20 px-4 py-3">
+    <div className="w-full space-y-1.5 border-b border-dust/20 px-3 py-1.5">
       <label className="flex items-center justify-between gap-3 font-ui text-sm text-dust">
         Tempo {controls.tempoPercent}%
         <input
@@ -44,7 +44,7 @@ export function PieceControlsBar({
               ),
             })
           }
-          className="min-h-12 w-16 bg-shadow px-2 text-ivory"
+          className="min-h-9 w-14 bg-shadow px-1.5 text-sm text-ivory"
         />
         <span>–</span>
         <input
@@ -60,7 +60,7 @@ export function PieceControlsBar({
               ),
             })
           }
-          className="min-h-12 w-16 bg-shadow px-2 text-ivory"
+          className="min-h-9 w-14 bg-shadow px-1.5 text-sm text-ivory"
         />
         <span className="text-dust/70">/ {measureCount}</span>
       </div>
@@ -75,7 +75,7 @@ export function PieceControlsBar({
               key={id}
               type="button"
               onClick={() => set({ hands: id })}
-              className={`min-h-12 px-4 font-ui ${
+              className={`min-h-9 px-3 text-sm font-ui ${
                 controls.hands === id
                   ? 'bg-brass text-ink'
                   : 'bg-shadow text-dust'
