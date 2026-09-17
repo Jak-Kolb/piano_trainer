@@ -31,6 +31,25 @@ export const BARS_PER_SYSTEM = 6
 const STAVE_H = 95
 const SYSTEM_GAP = 18
 
+/**
+ * Line scroll in system-units: hold the next line still for the first half of
+ * the current line, then ease it up into place so the handoff never snaps.
+ */
+function lineScrollPos(
+  measure: number,
+  beatFrac: number,
+  barsPerLine: number,
+): number {
+  const bps = Math.max(1, barsPerLine)
+  const abs = Math.max(0, measure - 1) + Math.min(0.999, Math.max(0, beatFrac))
+  const lineIdx = Math.floor(abs / bps)
+  const within = (abs % bps) / bps
+  const raw = within < 0.5 ? 0 : (within - 0.5) / 0.5
+  const eased = raw * raw * (3 - 2 * raw) // smoothstep
+  return lineIdx + eased
+}
+
+
 interface Props {
   notes: PieceNote[]
   measure: number
@@ -41,6 +60,8 @@ interface Props {
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
   /** +1 next measure, -1 previous — from wheel/trackpad on the sheet. */
   onMeasureScroll?: (dir: 1 | -1) => void
+  /** Playhead time (sec) for smooth line glide during demo / practice. */
+  nowSec?: number
   /** VexFlow key, e.g. "G" or "Em". */
   keySignature?: string
   /** Bars drawn per staff line (from time signature). */
@@ -107,21 +128,12 @@ type Built = {
   sliceGroups: NoteSlice[][]
 }
 
-function pushRests(
-  beats: number,
-  clef: 'treble' | 'bass',
-  notes: StaveNote[],
-  sliceGroups: NoteSlice[][],
-) {
-  for (const rd of restDurationsForBeats(beats)) {
-    notes.push(makeRest(clef, rd))
-    sliceGroups.push([])
-  }
-}
-
 /**
  * Build a bar in time order: rests go in the gaps before/between notes,
  * not dumped at the end.
+ *
+ * Cursor advances only by beats actually emitted as VexFlow glyphs so treble
+ * and bass stay on the same tick grid when joinVoices formats them.
  */
 function buildVoiceNotes(
   inBar: NoteSlice[],
@@ -137,26 +149,41 @@ function buildVoiceNotes(
   const spq = Math.max(0.01, secPerQuarter)
   const barStart = barStartSec(measure, spq)
   const barBeats = 4
-  let cursor = 0 // beats from start of bar
+  let cursor = 0 // beats from start of bar (must match Σ glyph beats)
+
+  const emitRests = (beats: number) => {
+    if (beats < 0.24) return
+    const specs = restDurationsForBeats(beats)
+    let placed = 0
+    for (const rd of specs) {
+      notes.push(makeRest(clef, rd))
+      sliceGroups.push([])
+      placed += rd.beats
+    }
+    cursor += placed
+  }
 
   if (!groups.length) {
-    pushRests(barBeats, clef, notes, sliceGroups)
+    emitRests(barBeats)
     return { notes, sliceGroups }
   }
 
-  for (const g of groups) {
+  for (const gRaw of groups) {
+    // Low→high so VexFlow can displace adjacent seconds cleanly
+    const g = [...gRaw].sort((a, b) => a.midi - b.midi)
     const onset =
       Math.round(((g[0]!.time - barStart) / spq) * 4) / 4 // 16th grid
     const gap = onset - cursor
-    if (gap >= 0.24) {
-      pushRests(gap, clef, notes, sliceGroups)
-      cursor += gap
-    }
+    if (gap >= 0.24) emitRests(gap)
 
     const rawBeats = Math.max(...g.map((s) => s.duration)) / spq
     const start = Math.max(cursor, Math.min(onset, barBeats))
-    const room = Math.max(0, barBeats - start)
-    const capped = room > 0 ? Math.min(rawBeats, room) : rawBeats
+    // Snap start forward if we skipped a tiny gap (notes must not share ticks)
+    if (start < cursor) {
+      /* keep cursor */
+    }
+    const room = Math.max(0.25, barBeats - cursor)
+    const capped = Math.min(Math.max(rawBeats, 0.25), room)
     const dur = durationToVex(capped * spq, spq)
 
     const keys = g.map((s) => midiToVexKey(s.midi))
@@ -184,13 +211,13 @@ function buildVoiceNotes(
     })
     notes.push(sn)
     sliceGroups.push(g)
-    cursor = Math.max(cursor, start + dur.beats)
+    cursor += dur.beats
+    if (cursor > barBeats + 0.001) break
   }
 
-  if (cursor < barBeats - 0.2) {
-    pushRests(barBeats - cursor, clef, notes, sliceGroups)
-  }
+  if (cursor < barBeats - 0.001) emitRests(barBeats - cursor)
 
+  // Final safety: still short → whole rest (empty-ish bar)
   if (!notes.length) {
     notes.push(makeRest(clef, { key: 'w', dots: 0, beats: 4 }))
     sliceGroups.push([])
@@ -218,6 +245,7 @@ export function StaffNotation({
   selection,
   onMeasurePointer,
   onMeasureScroll,
+  nowSec,
   keySignature = 'C',
   barsPerLine = 6,
 }: Props) {
@@ -227,6 +255,7 @@ export function StaffNotation({
     systems: { start: number; top: number; bottom: number }[]
     marginLeft: number
     barW: number
+    scrollY: number
   } | null>(null)
   const scrollAccum = useRef(0)
   const onMeasureScrollRef = useRef(onMeasureScroll)
@@ -273,19 +302,37 @@ export function StaffNotation({
 
       const slices = sliceNotesForTies(notes, secPerQuarter)
 
-      const lineStart =
-        Math.floor((Math.max(1, measure) - 1) / BPS) *
-          BPS +
-        1
-      const systemStarts = [lineStart]
-      if (lineStart + BPS <= measureCount) {
-        systemStarts.push(lineStart + BPS)
+      const barStart = barStartSec(measure, secPerQuarter)
+      const barDur = 4 * Math.max(0.01, secPerQuarter)
+      const tPlay =
+        nowSec ??
+        activeNotes[0]?.time ??
+        barStart
+      const beatFrac = Math.min(
+        0.999,
+        Math.max(0, (tPlay - barStart) / barDur),
+      )
+      const scrollPos = lineScrollPos(measure, beatFrac, BPS)
+
+      const baseLine = Math.max(0, Math.floor(scrollPos))
+      const localT = scrollPos - baseLine // 0..1 within the glide window
+      const systemStarts: number[] = []
+      for (let i = 0; i < 3; i++) {
+        const start = (baseLine + i) * BPS + 1
+        if (start <= measureCount) systemStarts.push(start)
+      }
+      if (
+        systemStarts.length < 2 &&
+        systemStarts[0] != null &&
+        systemStarts[0] + BPS <= measureCount
+      ) {
+        systemStarts.push(systemStarts[0] + BPS)
       }
 
       const windowNotes = notes.filter(
         (n) =>
-          n.measure >= lineStart &&
-          n.measure < lineStart + BPS * 2,
+          n.measure >= (systemStarts[0] ?? 1) &&
+          n.measure < (systemStarts[0] ?? 1) + BPS * 3,
       )
       const hasTreble =
         windowNotes.some(isTrebleNote) || windowNotes.length === 0
@@ -294,10 +341,10 @@ export function StaffNotation({
       const showBass = hasBass || !!hands
       const rows = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
       const systemH = 8 + rows * STAVE_H
-      const height =
-        8 +
-        systemStarts.length * systemH +
-        (systemStarts.length - 1) * SYSTEM_GAP
+      const stride = systemH + SYSTEM_GAP
+      // Local Y for the 2–3 visible lines only (keeps canvas bounded)
+      const height = 8 + systemStarts.length * stride
+      const viewH = 8 + 2 * systemH + SYSTEM_GAP
 
       const renderer = new Renderer(el, Renderer.Backends.SVG)
       renderer.resize(width, height)
@@ -473,23 +520,39 @@ export function StaffNotation({
         }
       }
 
-      // Clear placed between systems so ties don't span systems incorrectly
-      // (we redraw ties per row within a system; reset map each system)
-      let y = 4
-      for (const start of systemStarts) {
+      // Local Y: line 0 at top of canvas, then next lines below.
+      // translateY(-localT * stride) eases the next line into place; when
+      // baseLine ticks forward the content remaps with no visible jump.
+      systemStarts.forEach((start, i) => {
         placed.clear()
-        drawSystem(start, y)
-        y += systemH + SYSTEM_GAP
-      }
+        drawSystem(start, 4 + i * stride)
+      })
 
-      layout.current = { systems: systemsMeta, marginLeft, barW }
+      const scrollY = localT * stride
+      el.style.transform = `translateY(${-scrollY}px)`
+      el.style.willChange = 'transform'
+      // Short ease between practice steps; demo nowSec updates track closely
+      el.style.transition = 'transform 220ms ease-out'
+      box.style.height = `${viewH}px`
+      box.style.overflow = 'hidden'
+
+      layout.current = {
+        systems: systemsMeta.map((s) => ({
+          ...s,
+          top: s.top - scrollY,
+          bottom: s.bottom - scrollY,
+        })),
+        marginLeft,
+        barW,
+        scrollY,
+      }
     }
 
     draw()
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection, keySignature, BPS])
+  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
@@ -523,7 +586,7 @@ export function StaffNotation({
   return (
     <div
       ref={wrap}
-      className="w-full cursor-pointer rounded bg-shadow px-2 py-1"
+      className="w-full cursor-pointer overflow-hidden rounded bg-shadow px-2 py-1"
       onClick={handleClick}
       title="Click a bar to jump · Shift-click to select · Scroll to move measures"
     >
@@ -535,7 +598,7 @@ export function StaffNotation({
         {selLabel ?? ''}
         {' · '}
         {resolveHands(notes) ? 'tracks→hands' : 'pitch→clef'} · click /
-        shift-click · scroll
+        shift-click · scroll · lines glide
       </p>
     </div>
   )

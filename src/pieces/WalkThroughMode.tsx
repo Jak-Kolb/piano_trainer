@@ -385,6 +385,7 @@ export function WalkThroughMode({
               notes={notes}
               measure={displayMeasure}
               activeNotes={activeNotes}
+              nowSec={nowSec}
               secPerQuarter={parsed.secPerQuarter}
               measureCount={maxMeasure}
               selection={selection}

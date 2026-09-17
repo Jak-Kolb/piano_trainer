@@ -95,8 +95,8 @@ export type RestSpec = { key: string; dots: number; beats: number }
 /** Fill a gap with as few rest glyphs as possible (includes dotted rests). */
 export function restDurationsForBeats(beats: number): RestSpec[] {
   const out: RestSpec[] = []
-  let left = Math.round(beats * 8) / 8 // 32nd grid via eighths of a quarter… use 16th
-  left = Math.round(beats * 4) / 4
+  // Floor to 16th grid so rests never overshoot the gap (keeps voice ticks honest)
+  let left = Math.floor(beats * 4 + 1e-9) / 4
   if (left <= 0) return out
   const table: RestSpec[] = [
     { key: 'w', dots: 0, beats: 4 },
