@@ -646,6 +646,18 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: var(--shadow-card);
 }
 
+.staff-frame--paper {
+  border-color: color-mix(in srgb, #6b5f52 35%, transparent);
+  background: linear-gradient(180deg, #fff8ec, #f0e4cc);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55) inset,
+    0 8px 24px rgba(40, 30, 18, 0.12);
+}
+
+.staff-frame--paper p {
+  color: #6b5f52;
+}
+
 .meter-track {
   position: relative;
   height: 0.85rem;

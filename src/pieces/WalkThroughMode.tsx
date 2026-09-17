@@ -9,6 +9,11 @@ import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
 import { StaffNotation } from './StaffNotation'
 import type { ParsedPiece, PieceControls, PieceNote } from './types'
+import {
+  loadSheetPolarity,
+  saveSheetPolarity,
+  type SheetPolarity,
+} from '../settings/colorProfile'
 
 type ViewMode = 'staff' | 'roll' | 'both'
 type DemoKind = 'line' | 'bar' | 'selection' | 'song' | null
@@ -47,6 +52,9 @@ export function WalkThroughMode({
   )
   const [stepIdx, setStepIdx] = useState(0)
   const [view, setView] = useState<ViewMode>('staff')
+  const [sheetPolarity, setSheetPolarity] = useState<SheetPolarity>(() =>
+    loadSheetPolarity(),
+  )
   const [demo, setDemo] = useState<DemoKind>(null)
   const [demoLoading, setDemoLoading] = useState(false)
   const [demoPaused, setDemoPaused] = useState(false)
@@ -394,6 +402,25 @@ export function WalkThroughMode({
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          title="Flip sheet between light-on-dark and dark-on-light"
+          onClick={() => {
+            setSheetPolarity((prev) => {
+              const next: SheetPolarity =
+                prev === 'light-on-dark' ? 'dark-on-light' : 'light-on-dark'
+              saveSheetPolarity(next)
+              return next
+            })
+          }}
+          className={`btn btn-chip ${
+            sheetPolarity === 'dark-on-light'
+              ? 'btn-chip-active'
+              : 'btn-chip-idle'
+          }`}
+        >
+          {sheetPolarity === 'dark-on-light' ? 'Dark on light' : 'Light on dark'}
+        </button>
         <span className="divider-v" />
         {demo ? (
           <>
@@ -487,6 +514,7 @@ export function WalkThroughMode({
               }}
               keySignature={parsed.keySignature}
               barsPerLine={barsPerLine}
+              polarity={sheetPolarity}
             />
           )}
           {(view === 'staff' || view === 'both') && (
