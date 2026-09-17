@@ -60,8 +60,9 @@ export function barStartSec(
 }
 
 /**
- * Split sustained MIDI notes at real barlines (and mid-bar in even meters) so
- * the sheet can draw ties instead of one blob that crosses the structure.
+ * Split sustained MIDI notes only at real barlines from the measure timeline
+ * so the sheet can draw ties across measures. Do not cut mid-bar — a ~full-bar
+ * sustain should stay one slice (whole note), even in even meters.
  */
 export function sliceNotesForTies(
   notes: PieceNote[],
@@ -79,17 +80,8 @@ export function sliceNotesForTies(
       const info = measureInfoAt(measures, measure)
       const start = info.startSec
       const nextBar = start + info.durationSec
-      const mid = start + info.durationSec / 2
-      // Next structural split after t (mid-bar in even meters, else barline).
-      // 3/4 has no half-bar convention — only cut at barlines to avoid clutter.
-      let cut = nextBar
-      if (
-        info.beatsPerBar % 2 === 0 &&
-        t < mid - 0.01 &&
-        end > mid + 0.01
-      ) {
-        cut = mid
-      }
+      // Only structural split is the next barline.
+      const cut = nextBar
       const sliceEnd = Math.min(end, cut)
       const dur = sliceEnd - t
       if (dur > 0.02) {
