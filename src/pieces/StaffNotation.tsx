@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   Accidental,
   Barline,
+  Beam,
   Dot,
   Formatter,
   Renderer,
@@ -537,12 +538,26 @@ export function StaffNotation({
           }
 
           if (voices.length) {
+            // Beam consecutive 8ths/16ths/… within each beat group (VexFlow
+            // defaults for the bar's time signature). Create before format so
+            // flags are suppressed; draw after voices so beams sit on top.
+            const timeSig = `${bpb}/4`
+            const beamGroups = Beam.getDefaultBeamGroups(timeSig)
+            const beams: Beam[] = []
+            for (const voice of voices) {
+              beams.push(...Beam.applyAndGetBeams(voice, undefined, beamGroups))
+            }
+
             const fmt = new Formatter()
             fmt.joinVoices(voices)
             fmt.format(voices, inner)
             staves.forEach((row, i) => {
               voices[i]!.draw(ctx, row.stave)
             })
+            for (const beam of beams) {
+              beam.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
+              beam.setContext(ctx).draw()
+            }
           }
 
           // Dynamics in the gap above the bass (not Annotation-on-note —
