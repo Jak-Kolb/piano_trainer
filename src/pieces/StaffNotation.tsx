@@ -29,8 +29,13 @@ import {
 
 /** @deprecated Prefer barsPerSystem(beatsPerBar) — kept for callers. */
 export const BARS_PER_SYSTEM = 6
-const STAVE_H = 95
-const SYSTEM_GAP = 18
+const STAVE_H = 100
+/** Vertical room between treble and bass (dynamics, ledger clearance). */
+const CLEF_GAP = 18
+/** Extra space above the top staff / below the bottom staff per system. */
+const SYSTEM_PAD_TOP = 16
+const SYSTEM_PAD_BOTTOM = 14
+const SYSTEM_GAP = 28
 
 /**
  * Line scroll in system-units.
@@ -344,9 +349,13 @@ export function StaffNotation({
       const showTreble = hasTreble || !hasBass
       const showBass = hasBass || !!hands
       const rows = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
-      const systemH = 8 + rows * STAVE_H
+      const systemH =
+        SYSTEM_PAD_TOP +
+        rows * STAVE_H +
+        (rows > 1 ? CLEF_GAP : 0) +
+        SYSTEM_PAD_BOTTOM
       const stride = systemH + SYSTEM_GAP
-      const viewH = 8 + 2 * systemH + SYSTEM_GAP
+      const viewH = SYSTEM_PAD_TOP + 2 * systemH + SYSTEM_GAP + SYSTEM_PAD_BOTTOM
       // Pad above so systems can slide off the top without SVG clipping
       const pad = stride
       const height = pad + viewH + stride
@@ -391,8 +400,9 @@ export function StaffNotation({
           }
         })
 
-        const trebleY = y0 + 4
-        const bassY = trebleY + (showTreble ? STAVE_H : 0)
+        const trebleY = y0 + SYSTEM_PAD_TOP
+        const bassY =
+          trebleY + (showTreble ? STAVE_H + CLEF_GAP : 0)
         const rowTies: {
           first: StaveNote
           last: StaveNote
@@ -493,7 +503,7 @@ export function StaffNotation({
             if (!sn) continue
             const mx = sn.getAbsoluteX()
             const my = showBass
-              ? bassY - 4
+              ? bassY - Math.round(CLEF_GAP / 2) - 2
               : trebleY + STAVE_H - 12
             ctx.save()
             ctx.setFont('Times New Roman', 13, 'italic')
