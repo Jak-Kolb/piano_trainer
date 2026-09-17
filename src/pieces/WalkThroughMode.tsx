@@ -190,6 +190,39 @@ export function WalkThroughMode({
     jumpToMeasure(Math.min(hi, displayMeasure + 1))
   }
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (
+        t &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable)
+      ) {
+        return
+      }
+      if (demo) return
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        jumpPrevMeasure()
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        jumpNextMeasure()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [
+    demo,
+    displayMeasure,
+    controls.loopStartMeasure,
+    controls.loopEndMeasure,
+    maxMeasure,
+    steps,
+  ])
+
   const onMeasurePointer = (bar: number, shiftKey: boolean) => {
     if (shiftKey) {
       if (selectAnchor.current == null) {

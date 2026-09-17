@@ -32,8 +32,10 @@ const STAVE_H = 95
 const SYSTEM_GAP = 18
 
 /**
- * Line scroll in system-units: hold the next line still for the first half of
- * the current line, then ease it up into place so the handoff never snaps.
+ * Line scroll in system-units.
+ * Stay frozen through the entire first visible line. Once the playhead hits
+ * the first measure of the *next* line, glide that line up so it lands exactly
+ * where the first line was by the end of that next line.
  */
 function lineScrollPos(
   measure: number,
@@ -43,10 +45,12 @@ function lineScrollPos(
   const bps = Math.max(1, barsPerLine)
   const abs = Math.max(0, measure - 1) + Math.min(0.999, Math.max(0, beatFrac))
   const lineIdx = Math.floor(abs / bps)
-  const within = (abs % bps) / bps
-  const raw = within < 0.5 ? 0 : (within - 0.5) / 0.5
-  const eased = raw * raw * (3 - 2 * raw) // smoothstep
-  return lineIdx + eased
+  const within = (abs % bps) / bps // 0 at line start → ~1 at line end
+  // Line 0 (first system): no motion. Later lines: glide 0→1 across that line,
+  // which stacks as (lineIdx - 1) + within so boundaries stay continuous.
+  if (lineIdx <= 0) return 0
+  const eased = within * within * (3 - 2 * within) // smoothstep
+  return lineIdx - 1 + eased
 }
 
 
