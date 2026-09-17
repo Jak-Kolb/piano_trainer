@@ -46,7 +46,7 @@ export function WalkThroughMode({
   const step = steps[stepIdx]
   const nowSec = step?.[0]?.time ?? 0
   const measure = step?.[0]?.measure ?? controls.loopStartMeasure
-  const activeMidis = step?.map((n) => n.midi) ?? []
+  const activeNotes = step ?? []
 
   useEffect(() => {
     setStepIdx(0)
@@ -102,7 +102,7 @@ export function WalkThroughMode({
           <StaffNotation
             notes={notes}
             measure={measure}
-            activeMidis={activeMidis}
+            activeNotes={activeNotes}
             secPerQuarter={parsed.secPerQuarter}
             measureCount={Math.max(controls.loopEndMeasure, parsed.measureCount)}
           />

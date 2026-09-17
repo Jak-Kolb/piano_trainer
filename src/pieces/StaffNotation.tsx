@@ -22,7 +22,8 @@ const BARS_PER_SYSTEM = 8
 interface Props {
   notes: PieceNote[]
   measure: number
-  activeMidis: number[]
+  /** Exact current step notes (match midi + onset time, not every same pitch). */
+  activeNotes: PieceNote[]
   secPerQuarter: number
   measureCount: number
 }
@@ -46,11 +47,24 @@ function groupOnsets(pool: PieceNote[], windowSec = 0.12): PieceNote[][] {
   return groups
 }
 
+function isActiveGroup(g: PieceNote[], activeNotes: PieceNote[]): boolean {
+  if (!activeNotes.length || !g.length) return false
+  // A group is current only if it shares the step's onset (and midis)
+  const stepTime = activeNotes[0]!.time
+  const groupTime = g[0]!.time
+  if (Math.abs(groupTime - stepTime) > 0.05) return false
+  const need = new Set(activeNotes.map((n) => n.midi))
+  const have = new Set(g.map((n) => n.midi))
+  if (need.size !== have.size) return false
+  for (const m of need) if (!have.has(m)) return false
+  return true
+}
+
 function buildVoiceNotes(
   inBar: PieceNote[],
   clef: 'treble' | 'bass',
   secPerQuarter: number,
-  active: Set<number>,
+  activeNotes: PieceNote[],
 ): StaveNote[] {
   const groups = groupOnsets(inBar)
   const notes: StaveNote[] = []
@@ -70,7 +84,7 @@ function buildVoiceNotes(
       else if (pitch.length > 1 && pitch.endsWith('b'))
         sn.addModifier(new Accidental('b'), i)
     })
-    const isActive = g.some((n) => active.has(n.midi))
+    const isActive = isActiveGroup(g, activeNotes)
     sn.setStyle({
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
       strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
@@ -111,7 +125,7 @@ function buildVoiceNotes(
 export function StaffNotation({
   notes,
   measure,
-  activeMidis,
+  activeNotes,
   secPerQuarter,
   measureCount,
 }: Props) {
@@ -151,7 +165,6 @@ export function StaffNotation({
       ctx.setFillStyle('#EDE4D3')
       ctx.setStrokeStyle('#5C6478')
 
-      const active = new Set(activeMidis)
       const marginLeft = 8
       const usable = width - marginLeft - 8
       const barW = usable / BARS_PER_SYSTEM
@@ -177,7 +190,7 @@ export function StaffNotation({
             inBar,
             clef,
             secPerQuarter,
-            active,
+            activeNotes,
           )
           const voice = new Voice({
             num_beats: 4,
@@ -217,7 +230,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeMidis, secPerQuarter, measureCount])
+  }, [notes, measure, activeNotes, secPerQuarter, measureCount])
 
   const start =
     Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM +
