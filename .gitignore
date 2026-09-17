@@ -1,22 +1,42 @@
+# Dependencies & build
+node_modules
+dist
+dist-ssr
+coverage
+*.tsbuildinfo
+
 # Logs
 logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Local / private
 *.local
+.env
+.env.*
+!.env.example
 
-# Editor directories and files
+# Personal music library (never commit imports)
+*.mid
+*.midi
+*.MusicXML
+*.musicxml
+*.mxl
+/pieces/
+/midi/
+/imports/
+/library/
+/private/
+
+# Editor / OS
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
