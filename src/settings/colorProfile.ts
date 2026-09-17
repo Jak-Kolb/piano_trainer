@@ -205,3 +205,57 @@ export function sheetThemeColors(): {
     ink: g('--color-ink', '#0c1220'),
   }
 }
+
+
+export type SheetPolarity = 'light-on-dark' | 'dark-on-light'
+
+const SHEET_POLARITY_KEY = 'keys.sheetPolarity'
+
+export function loadSheetPolarity(): SheetPolarity {
+  try {
+    const v = localStorage.getItem(SHEET_POLARITY_KEY)
+    if (v === 'light-on-dark' || v === 'dark-on-light') return v
+  } catch {
+    /* ignore */
+  }
+  return 'light-on-dark'
+}
+
+export function saveSheetPolarity(polarity: SheetPolarity): void {
+  try {
+    localStorage.setItem(SHEET_POLARITY_KEY, polarity)
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Sheet ink colors for playthrough polarity (independent of app color profile). */
+export function sheetColorsForPolarity(polarity: SheetPolarity): {
+  note: string
+  staff: string
+  rest: string
+  active: string
+  ledger: string
+  dynamic: string
+  ink: string
+  ground: string
+} {
+  const theme = sheetThemeColors()
+  if (polarity === 'light-on-dark') {
+    return {
+      ...theme,
+      ground: theme.ink,
+    }
+  }
+  // Dark notation on light paper — keep active brass from the profile.
+  return {
+    note: '#1c1612',
+    staff: '#6b5f52',
+    rest: '#7a6e60',
+    active: theme.active,
+    ledger: '#6b5f52',
+    dynamic: '#3d3228',
+    ink: '#f4ebda',
+    ground: '#f4ebda',
+  }
+}

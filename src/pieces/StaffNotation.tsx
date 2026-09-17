@@ -26,7 +26,10 @@ import {
   restDurationsForBeats,
   type VexDuration,
 } from './midiToVex'
-import { sheetThemeColors } from '../settings/colorProfile'
+import {
+  sheetColorsForPolarity,
+  type SheetPolarity,
+} from '../settings/colorProfile'
 
 /** @deprecated Prefer barsPerSystem(beatsPerBar) — kept for callers. */
 export const BARS_PER_SYSTEM = 6
@@ -77,6 +80,8 @@ interface Props {
   keySignature?: string
   /** Bars drawn per staff line (from time signature). */
   barsPerLine?: number
+  /** Light notes on dark paper, or dark notes on light paper. */
+  polarity?: SheetPolarity
 }
 
 function groupSlices(pool: NoteSlice[], windowSec = 0.12): NoteSlice[][] {
@@ -121,7 +126,7 @@ function vexDurationString(dur: VexDuration, rest: boolean): string {
 function makeRest(
   clef: 'treble' | 'bass',
   dur: VexDuration,
-  colors: ReturnType<typeof sheetThemeColors>,
+  colors: ReturnType<typeof sheetColorsForPolarity>,
 ): StaveNote {
   const restKey = clef === 'bass' ? 'd/3' : 'b/4'
   const rest = new StaveNote({
@@ -164,7 +169,7 @@ function buildVoiceNotes(
   activeNotes: PieceNote[],
   measure: number,
   keySignature: string,
-  colors: ReturnType<typeof sheetThemeColors>,
+  colors: ReturnType<typeof sheetColorsForPolarity>,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -272,6 +277,7 @@ export function StaffNotation({
   nowSec,
   keySignature = 'C',
   barsPerLine = 6,
+  polarity = 'light-on-dark',
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -382,7 +388,7 @@ export function StaffNotation({
       const pad = stride
       const height = pad + viewH + stride
 
-      const colors = sheetThemeColors()
+      const colors = sheetColorsForPolarity(polarity)
       const renderer = new Renderer(el, Renderer.Backends.SVG)
       renderer.resize(width, height)
       const ctx = renderer.getContext()
@@ -611,7 +617,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, themeEpoch])
+  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, themeEpoch, polarity])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
@@ -645,7 +651,7 @@ export function StaffNotation({
   return (
     <div
       ref={wrap}
-      className="staff-frame"
+      className={`staff-frame${polarity === 'dark-on-light' ? ' staff-frame--paper' : ''}`}
       onClick={handleClick}
       title="Click a bar to jump · Shift-click to select · Scroll to move measures"
     >
