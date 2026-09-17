@@ -4,30 +4,54 @@ export function DrillFrame({
   title,
   status,
   streak,
+  round,
+  accuracy,
   onExit,
   banner,
   children,
+  keyboard,
   footer,
 }: {
   title?: string
   status?: string
   streak?: number
+  /** e.g. "3 / 20" */
+  round?: string
+  /** e.g. "80%" */
+  accuracy?: string
   onExit: () => void
   banner?: ReactNode
   children: ReactNode
+  /** Walk-through-quality piano (or diagram) pinned above the footer. */
+  keyboard?: ReactNode
   footer?: ReactNode
 }) {
   return (
     <div className="flex h-full flex-col bg-ink">
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
         <button
           type="button"
           onClick={onExit}
-          className="min-h-12 shrink-0 px-3 font-ui text-dust"
+          className="min-h-11 shrink-0 px-3 font-ui text-dust"
         >
           Exit
         </button>
-        <p className="truncate font-ui text-xs text-dust">{status ?? title ?? ''}</p>
+        <div className="min-w-0 flex-1 text-center">
+          <p className="truncate font-ui text-[11px] text-dust">
+            {status ?? title ?? ''}
+          </p>
+          {(round || accuracy) && (
+            <p className="font-ui text-xs text-dust">
+              {round}
+              {round && accuracy ? ' · ' : ''}
+              {accuracy ? (
+                <>
+                  Acc <span className="text-brass">{accuracy}</span>
+                </>
+              ) : null}
+            </p>
+          )}
+        </div>
         <p className="shrink-0 font-ui text-sm text-dust">
           {streak !== undefined && (
             <>
@@ -37,10 +61,11 @@ export function DrillFrame({
         </p>
       </div>
       {banner}
-      <div className="flex flex-1 flex-col items-center justify-center px-4">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4">
         {children}
       </div>
-      {footer && <div className="flex gap-3 p-4 pb-8">{footer}</div>}
+      {keyboard}
+      {footer && <div className="flex flex-wrap gap-3 p-4 pb-6">{footer}</div>}
     </div>
   )
 }

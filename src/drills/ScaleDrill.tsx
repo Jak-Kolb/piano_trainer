@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
+import { PianoBar } from '../pieces/PianoBar'
+import { preloadPiano } from '../pieces/pianoPlayer'
 import {
   formatMs,
   getBestMs,
@@ -13,6 +14,7 @@ import {
   twoOctaveScaleNotes,
 } from '../theory'
 import { DrillFrame } from './DrillFrame'
+import { drillActiveKeys, playSequenceDemo } from './drillMidi'
 import { SelfReportButtons } from './SelfReportButtons'
 
 const KEYS = ['C major', 'G major', 'D major', 'A major', 'E major', 'F major'] as const
@@ -37,6 +39,9 @@ export function ScaleDrill({
     getBestMs(kind, 'C major', 'right'),
   )
   const [isNewBest, setIsNewBest] = useState(false)
+  const [heldMidi, setHeldMidi] = useState<number[]>([])
+  const [playing, setPlaying] = useState(false)
+  const stopDemo = useRef<(() => void) | null>(null)
   const advancedForStep = useRef(false)
   const startedAt = useRef<number | null>(null)
   const tickRef = useRef(0)
@@ -111,6 +116,12 @@ export function ScaleDrill({
   }, [key, hand, kind])
 
   useEffect(() => {
+    preloadPiano()
+    return () => stopDemo.current?.()
+  }, [])
+
+
+  useEffect(() => {
     advancedForStep.current = false
   }, [step])
 
@@ -129,16 +140,16 @@ export function ScaleDrill({
   useEffect(() => {
     if (!current || done) return
     return input.onChange(() => {
+      const held = input.getHeldMidiNotes()
+      setHeldMidi(held)
       if (advancedForStep.current) return
 
       if (input.id === 'midi') {
-        const held = input.getHeldMidiNotes()
         if (held.includes(current.midi)) advanceFromMatch()
         return
       }
 
       if (input.id === 'mic') {
-        const held = input.getHeldMidiNotes()
         const pcs = input.getHeldPitchClasses()
         if (held.includes(current.midi)) {
           advanceFromMatch()
@@ -152,6 +163,30 @@ export function ScaleDrill({
       }
     })
   }, [input, current, done, step, notes.length])
+
+  const targetMidi = current ? [current.midi] : []
+  const scaleMidis = notes.map((n) => n.midi)
+  const activeKeys = drillActiveKeys(
+    heldMidi,
+    targetMidi,
+    hand === 'right' ? 'right' : 'left',
+  )
+
+  const onPlayIt = async () => {
+    if (playing || done) return
+    stopDemo.current?.()
+    setPlaying(true)
+    try {
+      const { stop } = await playSequenceDemo(scaleMidis, 0.22)
+      stopDemo.current = stop
+      window.setTimeout(
+        () => setPlaying(false),
+        Math.round(scaleMidis.length * 220 + 400),
+      )
+    } catch {
+      setPlaying(false)
+    }
+  }
 
   if (done) {
     return (
@@ -194,18 +229,35 @@ export function ScaleDrill({
           </p>
         ) : undefined
       }
-      footer={
-        <SelfReportButtons
-          onHit={() => {
-            ensureTimer()
-            completeRun()
-          }}
-          onMiss={() => {
-            setStreak(0)
-            restart()
-          }}
-          showOnlyGrade
+      keyboard={
+        <PianoBar
+          activeKeys={activeKeys}
+          lowMidi={hand === 'left' ? 36 : 48}
+          highMidi={hand === 'left' ? 72 : 84}
         />
+      }
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => void onPlayIt()}
+            disabled={playing}
+            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+          >
+            {playing ? 'Playing…' : 'Play it'}
+          </button>
+          <SelfReportButtons
+            onHit={() => {
+              ensureTimer()
+              completeRun()
+            }}
+            onMiss={() => {
+              setStreak(0)
+              restart()
+            }}
+            showOnlyGrade
+          />
+        </>
       }
     >
       <div className="mb-4 flex flex-wrap justify-center gap-2">
@@ -246,10 +298,6 @@ export function ScaleDrill({
       <p className="mt-1 font-ui text-sm text-dust">
         MIDI needs the correct octave (C4 ≠ C5)
       </p>
-
-      <div className="mt-6 w-full max-w-lg">
-        <KeyboardDiagram highlight={notes} active={current} hideLabels />
-      </div>
 
       <div className="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
         {notes.map((n, i) => (
