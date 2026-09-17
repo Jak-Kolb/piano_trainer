@@ -42,3 +42,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local planning / private specs (keep on disk, never publish)
+/spec/

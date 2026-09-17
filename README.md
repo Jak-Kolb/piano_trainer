@@ -2,7 +2,7 @@
 
 Offline piano practice app for a music stand: **Skills** drills and **Pieces** playthrough with real sheet music. Built for a Kawai (or any USB-MIDI keyboard) in Chrome.
 
-![Home](docs/aesthetic-screenshots/01-home.png)
+![Home](docs/screenshots/01-home.png)
 
 ## Features
 
@@ -16,15 +16,15 @@ Offline piano practice app for a music stand: **Skills** drills and **Pieces** p
 
 | Home | Skills |
 | --- | --- |
-| ![Home](docs/aesthetic-screenshots/01-home.png) | ![Skills](docs/aesthetic-screenshots/02-skills.png) |
+| ![Home](docs/screenshots/01-home.png) | ![Skills](docs/screenshots/02-skills.png) |
 
 | Pieces library | Settings |
 | --- | --- |
-| ![Pieces](docs/aesthetic-screenshots/03-pieces.png) | ![Settings](docs/aesthetic-screenshots/04-settings.png) |
+| ![Pieces](docs/screenshots/03-pieces.png) | ![Settings](docs/screenshots/04-settings.png) |
 
 | Drill | Home (narrow) |
 | --- | --- |
-| ![Drill](docs/aesthetic-screenshots/05-drill.png) | ![Mobile](docs/aesthetic-screenshots/06-home-mobile.png) |
+| ![Drill](docs/screenshots/05-drill.png) | ![Mobile](docs/screenshots/06-home-mobile.png) |
 
 ## Requirements
 
@@ -78,8 +78,6 @@ npm run build
 ## Stack
 
 Vite · React · TypeScript · Tailwind v4 · VexFlow · Tone.js · `@tonejs/midi`
-
-Spec notes live in `piano_trainer_spec.md` and `docs/`.
 
 ## License
 
