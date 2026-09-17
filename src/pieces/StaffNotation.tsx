@@ -80,23 +80,21 @@ function isActiveGroup(g: NoteSlice[], activeNotes: PieceNote[]): boolean {
 }
 
 
-function applyDots(sn: StaveNote, dots: number, keyCount: number) {
-  if (dots <= 0) return
-  for (let k = 0; k < keyCount; k++) {
-    for (let d = 0; d < dots; d++) {
-      sn.addModifier(new Dot(), k)
-    }
-  }
+/** VexFlow only counts dots in timing when duration is e.g. "qd" / "qdr". */
+function vexDurationString(dur: VexDuration, rest: boolean): string {
+  const dots = dur.dots > 0 ? 'd' : ''
+  return rest ? `${dur.key}${dots}r` : `${dur.key}${dots}`
 }
 
 function makeRest(clef: 'treble' | 'bass', dur: VexDuration): StaveNote {
   const restKey = clef === 'bass' ? 'd/3' : 'b/4'
   const rest = new StaveNote({
     keys: [restKey],
-    duration: `${dur.key}r`,
+    duration: vexDurationString(dur, true),
     clef,
   })
-  applyDots(rest, dur.dots, 1)
+  // Visual dot (ticks already include it via "qdr" etc.)
+  if (dur.dots > 0) Dot.buildAndAttach([rest], { all: true })
   rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
   return rest
 }
@@ -160,14 +158,19 @@ function buildVoiceNotes(
     const dur = durationToVex(capped * spq, spq)
 
     const keys = g.map((s) => midiToVexKey(s.midi))
-    const sn = new StaveNote({ keys, duration: dur.key, clef })
+    const sn = new StaveNote({
+      keys,
+      duration: vexDurationString(dur, false),
+      clef,
+    })
     keys.forEach((k, i) => {
       if (g[i]?.tieFromPrev) return
       const pitch = k.split('/')[0]!
       const acc = writtenAccidental(pitch, keySignature)
       if (acc) sn.addModifier(new Accidental(acc), i)
     })
-    applyDots(sn, dur.dots, keys.length)
+    // Dot modifier is visual only; timing comes from "qd" duration above
+    if (dur.dots > 0) Dot.buildAndAttach([sn], { all: true })
     const isActive = isActiveGroup(g, activeNotes)
     sn.setStyle({
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
