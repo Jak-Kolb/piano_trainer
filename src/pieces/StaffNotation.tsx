@@ -318,25 +318,23 @@ export function StaffNotation({
       )
       const scrollPos = lineScrollPos(measure, beatFrac, BPS)
 
+      // Visible systems in absolute line-index space (no local remapping —
+      // remapping + CSS transition caused snaps on every handoff after 1→2).
       const baseLine = Math.max(0, Math.floor(scrollPos))
-      const localT = scrollPos - baseLine // 0..1 within the glide window
-      const systemStarts: number[] = []
-      for (let i = 0; i < 3; i++) {
-        const start = (baseLine + i) * BPS + 1
-        if (start <= measureCount) systemStarts.push(start)
+      const lineIndices: number[] = []
+      for (let i = -1; i <= 2; i++) {
+        const li = baseLine + i
+        if (li < 0) continue
+        const start = li * BPS + 1
+        if (start <= measureCount) lineIndices.push(li)
       }
-      if (
-        systemStarts.length < 2 &&
-        systemStarts[0] != null &&
-        systemStarts[0] + BPS <= measureCount
-      ) {
-        systemStarts.push(systemStarts[0] + BPS)
-      }
+      if (lineIndices.length === 0) lineIndices.push(0)
 
+      const windowLo = (lineIndices[0] ?? 0) * BPS + 1
       const windowNotes = notes.filter(
         (n) =>
-          n.measure >= (systemStarts[0] ?? 1) &&
-          n.measure < (systemStarts[0] ?? 1) + BPS * 3,
+          n.measure >= windowLo &&
+          n.measure < windowLo + BPS * 4,
       )
       const hasTreble =
         windowNotes.some(isTrebleNote) || windowNotes.length === 0
@@ -346,9 +344,10 @@ export function StaffNotation({
       const rows = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
       const systemH = 8 + rows * STAVE_H
       const stride = systemH + SYSTEM_GAP
-      // Local Y for the 2–3 visible lines only (keeps canvas bounded)
-      const height = 8 + systemStarts.length * stride
       const viewH = 8 + 2 * systemH + SYSTEM_GAP
+      // Pad above so systems can slide off the top without SVG clipping
+      const pad = stride
+      const height = pad + viewH + stride
 
       const renderer = new Renderer(el, Renderer.Backends.SVG)
       renderer.resize(width, height)
@@ -524,31 +523,31 @@ export function StaffNotation({
         }
       }
 
-      // Local Y: line 0 at top of canvas, then next lines below.
-      // translateY(-localT * stride) eases the next line into place; when
-      // baseLine ticks forward the content remaps with no visible jump.
-      systemStarts.forEach((start, i) => {
+      // Place each system at its scrolled Y. Constant translate(-pad) only
+      // reveals the viewport — scrollPos changes never remap local indices.
+      for (const lineIdx of lineIndices) {
         placed.clear()
-        drawSystem(start, 4 + i * stride)
-      })
+        const start = lineIdx * BPS + 1
+        const y0 = pad + (lineIdx - scrollPos) * stride
+        if (y0 > height || y0 + systemH < 0) continue
+        drawSystem(start, y0)
+      }
 
-      const scrollY = localT * stride
-      el.style.transform = `translateY(${-scrollY}px)`
-      el.style.willChange = 'transform'
-      // Short ease between practice steps; demo nowSec updates track closely
-      el.style.transition = 'transform 220ms ease-out'
+      el.style.transform = `translateY(${-pad}px)`
+      el.style.transition = 'none'
+      el.style.willChange = 'auto'
       box.style.height = `${viewH}px`
       box.style.overflow = 'hidden'
 
       layout.current = {
         systems: systemsMeta.map((s) => ({
           ...s,
-          top: s.top - scrollY,
-          bottom: s.bottom - scrollY,
+          top: s.top - pad,
+          bottom: s.bottom - pad,
         })),
         marginLeft,
         barW,
-        scrollY,
+        scrollY: scrollPos * stride,
       }
     }
 
