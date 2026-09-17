@@ -6,13 +6,11 @@ import { midiChordHeld, midiNames } from './noteMatch'
 import { chordWindowSec, filterNotes, groupSteps } from './parseMidi'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
-import { StaffNotation } from './StaffNotation'
+import { BARS_PER_SYSTEM, StaffNotation } from './StaffNotation'
 import type { ParsedPiece, PieceControls, PieceNote } from './types'
 
 type ViewMode = 'staff' | 'roll' | 'both'
-type DemoKind = 'line' | 'bar' | null
-
-const BARS_PER_LINE = 8
+type DemoKind = 'line' | 'bar' | 'selection' | null
 
 interface Props {
   parsed: ParsedPiece
@@ -51,6 +49,11 @@ export function WalkThroughMode({
   const [demo, setDemo] = useState<DemoKind>(null)
   const [demoLoading, setDemoLoading] = useState(false)
   const [demoNow, setDemoNow] = useState(0)
+  const [selection, setSelection] = useState<{
+    start: number
+    end: number
+  } | null>(null)
+  const selectAnchor = useRef<number | null>(null)
   const stopDemoRef = useRef<(() => void) | null>(null)
   const demoMeta = useRef<{
     originSec: number
@@ -61,14 +64,13 @@ export function WalkThroughMode({
 
   const step = steps[stepIdx]
   const measure = step?.[0]?.measure ?? controls.loopStartMeasure
-  const lineStart = lineStartMeasure(measure, BARS_PER_LINE)
-  const lineEnd = lineStart + BARS_PER_LINE - 1
+  const lineStart = lineStartMeasure(measure, BARS_PER_SYSTEM)
+  const lineEnd = lineStart + BARS_PER_SYSTEM - 1
+  const maxMeasure = Math.max(controls.loopEndMeasure, parsed.measureCount)
 
-  // During demo, highlight by playback time; otherwise by practice step
   const activeNotes: PieceNote[] = useMemo(() => {
     if (demo && demoMeta.current) {
       const t = demoNow
-      // Find step whose onset is current (latest onset <= t)
       let best: PieceNote[] = []
       let bestTime = -1
       for (const s of steps) {
@@ -86,12 +88,21 @@ export function WalkThroughMode({
   const displayMeasure = activeNotes[0]?.measure ?? measure
   const nowSec = demo ? demoNow : (step?.[0]?.time ?? 0)
 
+  const selLo = selection
+    ? Math.min(selection.start, selection.end)
+    : null
+  const selHi = selection
+    ? Math.max(selection.start, selection.end)
+    : null
+
   useEffect(() => {
     preloadPiano()
   }, [])
 
   useEffect(() => {
     setStepIdx(0)
+    setSelection(null)
+    selectAnchor.current = null
   }, [notes])
 
   useEffect(() => {
@@ -100,7 +111,6 @@ export function WalkThroughMode({
     }
   }, [])
 
-  // Sync practice step index while demo plays (so Skip/Back stay coherent after)
   useEffect(() => {
     if (!demo) return
     const t = demoNow
@@ -114,7 +124,7 @@ export function WalkThroughMode({
   }, [demo, demoNow, steps])
 
   useEffect(() => {
-    if (demo) return // don't auto-advance from MIDI during demo
+    if (demo) return
     if (!step || input.id !== 'midi') return
     return input.onChange(() => {
       const held = input.getHeldMidiNotes()
@@ -132,10 +142,49 @@ export function WalkThroughMode({
     setDemo(null)
   }
 
-  const startDemo = async (kind: 'line' | 'bar') => {
+  const jumpToMeasure = (bar: number, opts?: { keepDemo?: boolean }) => {
+    if (!opts?.keepDemo) stopDemo()
+    const exact = steps.findIndex((s) => s[0]?.measure === bar)
+    if (exact >= 0) {
+      setStepIdx(exact)
+      return
+    }
+    const next = steps.findIndex((s) => (s[0]?.measure ?? 0) >= bar)
+    setStepIdx(next >= 0 ? next : Math.max(0, steps.length - 1))
+  }
+
+  const jumpSongStart = () => {
     stopDemo()
-    const lo = kind === 'bar' ? displayMeasure : lineStart
-    const hi = kind === 'bar' ? displayMeasure : lineEnd
+    setStepIdx(0)
+    setSelection(null)
+    selectAnchor.current = null
+  }
+
+  const jumpBarStart = () => {
+    jumpToMeasure(displayMeasure)
+  }
+
+  const onMeasurePointer = (bar: number, shiftKey: boolean) => {
+    if (shiftKey) {
+      if (selectAnchor.current == null) {
+        selectAnchor.current = bar
+        setSelection({ start: bar, end: bar })
+      } else {
+        setSelection({ start: selectAnchor.current, end: bar })
+      }
+      return
+    }
+    selectAnchor.current = null
+    setSelection(null)
+    jumpToMeasure(bar)
+  }
+
+  const startDemoRange = async (
+    lo: number,
+    hi: number,
+    kind: DemoKind,
+  ) => {
+    stopDemo()
     const slice = notes.filter((n) => n.measure >= lo && n.measure <= hi)
     if (!slice.length) return
 
@@ -152,15 +201,23 @@ export function WalkThroughMode({
       }
       setDemoNow(handle.originSec)
       setDemo(kind)
-
-      const firstIdx = steps.findIndex((s) => (s[0]?.measure ?? 0) >= lo)
-      if (firstIdx >= 0) setStepIdx(firstIdx)
+      jumpToMeasure(lo, { keepDemo: true })
     } finally {
       setDemoLoading(false)
     }
   }
 
-  // Demo clock
+  const startDemo = async (kind: 'line' | 'bar' | 'selection') => {
+    if (kind === 'selection') {
+      if (selLo == null || selHi == null) return
+      await startDemoRange(selLo, selHi, 'selection')
+      return
+    }
+    const lo = kind === 'bar' ? displayMeasure : lineStart
+    const hi = kind === 'bar' ? displayMeasure : lineEnd
+    await startDemoRange(lo, hi, kind)
+  }
+
   useEffect(() => {
     if (!demo || !demoMeta.current) return
     let raf = 0
@@ -189,11 +246,24 @@ export function WalkThroughMode({
       ? midiChordHeld(input.getHeldMidiNotes(), step)
       : !demo && stepIdx >= steps.length
 
+  const demoStatus =
+    demo === 'line'
+      ? 'line'
+      : demo === 'bar'
+        ? 'bar'
+        : demo === 'selection'
+          ? 'selection'
+          : null
+
   return (
     <div className="flex h-full flex-col bg-ink">
       <Header
         title={title}
-        status={demo ? `Demo · ${demo === 'line' ? 'line' : 'bar'}` : input.getStatus()}
+        status={
+          demo
+            ? `Demo · ${demoStatus}`
+            : input.getStatus()
+        }
         onExit={() => {
           stopDemo()
           onExit()
@@ -257,6 +327,28 @@ export function WalkThroughMode({
             >
               Play bar {displayMeasure}
             </button>
+            {selLo != null && selHi != null && (
+              <button
+                type="button"
+                onClick={() => void startDemo('selection')}
+                className="min-h-12 bg-brass px-4 font-ui text-ink"
+              >
+                Play selected ({selLo}
+                {selHi !== selLo ? `–${selHi}` : ''})
+              </button>
+            )}
+            {selection && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelection(null)
+                  selectAnchor.current = null
+                }}
+                className="min-h-12 bg-shadow px-3 font-ui text-dust"
+              >
+                Clear select
+              </button>
+            )}
           </>
         )}
       </div>
@@ -267,7 +359,9 @@ export function WalkThroughMode({
             measure={displayMeasure}
             activeNotes={activeNotes}
             secPerQuarter={parsed.secPerQuarter}
-            measureCount={Math.max(controls.loopEndMeasure, parsed.measureCount)}
+            measureCount={maxMeasure}
+            selection={selection}
+            onMeasurePointer={onMeasurePointer}
           />
         )}
         {(view === 'roll' || view === 'both') && (
@@ -304,7 +398,23 @@ export function WalkThroughMode({
             </>
           )}
         </div>
-        <div className="flex gap-3 pb-4">
+        <div className="flex flex-wrap gap-3 pb-4">
+          <button
+            type="button"
+            disabled={!!demo}
+            className="min-h-16 flex-1 bg-shadow font-ui text-ivory disabled:opacity-40"
+            onClick={jumpSongStart}
+          >
+            Song start
+          </button>
+          <button
+            type="button"
+            disabled={!!demo}
+            className="min-h-16 flex-1 bg-shadow font-ui text-ivory disabled:opacity-40"
+            onClick={jumpBarStart}
+          >
+            Bar start
+          </button>
           <button
             type="button"
             disabled={!!demo}

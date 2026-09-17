@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 import {
   Accidental,
   Barline,
@@ -17,7 +17,7 @@ import {
   vexDurationBeats,
 } from './midiToVex'
 
-const BARS_PER_SYSTEM = 8
+export const BARS_PER_SYSTEM = 8
 
 interface Props {
   notes: PieceNote[]
@@ -26,6 +26,9 @@ interface Props {
   activeNotes: PieceNote[]
   secPerQuarter: number
   measureCount: number
+  /** Inclusive selected range, or null. */
+  selection: { start: number; end: number } | null
+  onMeasurePointer: (bar: number, shiftKey: boolean) => void
 }
 
 function groupOnsets(pool: PieceNote[], windowSec = 0.12): PieceNote[][] {
@@ -49,7 +52,6 @@ function groupOnsets(pool: PieceNote[], windowSec = 0.12): PieceNote[][] {
 
 function isActiveGroup(g: PieceNote[], activeNotes: PieceNote[]): boolean {
   if (!activeNotes.length || !g.length) return false
-  // A group is current only if it shares the step's onset (and midis)
   const stepTime = activeNotes[0]!.time
   const groupTime = g[0]!.time
   if (Math.abs(groupTime - stepTime) > 0.05) return false
@@ -93,7 +95,6 @@ function buildVoiceNotes(
     beats += vexDurationBeats(dur)
   }
 
-  // Pad with rests so Formatter spaces like a full bar of music
   const restKey = clef === 'bass' ? 'd/3' : 'b/4'
   for (const rd of restDurationsForBeats(Math.max(0, 4 - beats))) {
     const rest = new StaveNote({
@@ -118,9 +119,18 @@ function buildVoiceNotes(
   return notes
 }
 
+function inSelection(
+  bar: number,
+  selection: { start: number; end: number } | null,
+): boolean {
+  if (!selection) return false
+  const lo = Math.min(selection.start, selection.end)
+  const hi = Math.max(selection.start, selection.end)
+  return bar >= lo && bar <= hi
+}
+
 /**
- * Always draws an 8-bar system (like reading a line of sheet music).
- * Notes are padded with rests so spacing follows rhythm, not stretched gaps.
+ * Always draws an 8-bar system. Click a bar to jump; shift-click to select a range.
  */
 export function StaffNotation({
   notes,
@@ -128,9 +138,17 @@ export function StaffNotation({
   activeNotes,
   secPerQuarter,
   measureCount,
+  selection,
+  onMeasurePointer,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
+  const layout = useRef<{
+    start: number
+    marginLeft: number
+    barW: number
+    width: number
+  } | null>(null)
 
   useEffect(() => {
     const el = host.current
@@ -153,7 +171,6 @@ export function StaffNotation({
       const hasTreble =
         systemNotes.some((n) => n.midi >= 60) || systemNotes.length === 0
       const hasBass = systemNotes.some((n) => n.midi < 60)
-      // Always show grand staff for piano pieces when either hand appears anywhere in piece
       const showTreble = hasTreble || !hasBass
       const showBass = hasBass || notes.some((n) => n.midi < 60)
       const rows = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
@@ -168,6 +185,24 @@ export function StaffNotation({
       const marginLeft = 8
       const usable = width - marginLeft - 8
       const barW = usable / BARS_PER_SYSTEM
+      layout.current = { start, marginLeft, barW, width }
+
+      // Selection + current-bar backgrounds (behind staves)
+      bars.forEach((barNum, bi) => {
+        if (barNum > measureCount) return
+        const x = marginLeft + bi * barW
+        if (inSelection(barNum, selection)) {
+          ctx.save()
+          ctx.setFillStyle('rgba(192, 139, 62, 0.22)')
+          ctx.fillRect(x, 4, barW, height - 8)
+          ctx.restore()
+        } else if (barNum === measure) {
+          ctx.save()
+          ctx.setFillStyle('rgba(192, 139, 62, 0.08)')
+          ctx.fillRect(x, 4, barW, height - 8)
+          ctx.restore()
+        }
+      })
 
       const drawRow = (
         clef: 'treble' | 'bass',
@@ -230,18 +265,46 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, secPerQuarter, measureCount])
+  }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection])
 
   const start =
     Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM +
     1
   const end = start + BARS_PER_SYSTEM - 1
 
+  const handleClick = (e: MouseEvent) => {
+    const lay = layout.current
+    const box = wrap.current
+    if (!lay || !box) return
+    const rect = box.getBoundingClientRect()
+    const x = e.clientX - rect.left - lay.marginLeft
+    if (x < 0 || x > lay.barW * BARS_PER_SYSTEM) return
+    const bi = Math.min(BARS_PER_SYSTEM - 1, Math.floor(x / lay.barW))
+    const bar = lay.start + bi
+    if (bar < 1 || bar > measureCount) return
+    onMeasurePointer(bar, e.shiftKey)
+  }
+
+  const selLabel =
+    selection &&
+    (selection.start === selection.end
+      ? ` · selected bar ${selection.start}`
+      : ` · selected bars ${Math.min(selection.start, selection.end)}–${Math.max(selection.start, selection.end)}`)
+
   return (
-    <div ref={wrap} className="w-full rounded bg-shadow px-2 py-2">
+    <div
+      ref={wrap}
+      className="w-full cursor-pointer rounded bg-shadow px-2 py-2"
+      onClick={handleClick}
+      title="Click a bar to jump · Shift-click to select a range"
+    >
       <div ref={host} className="w-full" style={{ minHeight: 200 }} />
       <p className="pb-2 text-center font-ui text-sm text-dust">
         Line: bars {start}–{end} (playing bar {measure})
+        {selLabel ?? ''}
+      </p>
+      <p className="pb-1 text-center font-ui text-xs text-dust/80">
+        Click bar to jump · Shift-click range to select
       </p>
     </div>
   )
