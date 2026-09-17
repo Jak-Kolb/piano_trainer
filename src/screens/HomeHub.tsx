@@ -57,7 +57,7 @@ export function HomeHub({
           >
             <span className="font-display text-3xl text-ivory">Pieces</span>
             <span className="mt-2 block font-ui text-dust">
-              Import MIDI · walk-through · verify
+              Import MIDI · playthrough · Play song
             </span>
           </button>
         </div>
