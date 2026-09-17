@@ -489,22 +489,27 @@ export function StaffNotation({
           const barMarks = pieceDynMarks.filter((m) => m.measure === barNum)
           for (const mark of barMarks) {
             let sn: StaveNote | undefined
-            for (const row of staves) {
-              row.built.sliceGroups.forEach((g, gi) => {
+            const rowsBassFirst = [...staves].sort((a, b) =>
+              a.clef === 'bass' ? -1 : b.clef === 'bass' ? 1 : 0,
+            )
+            for (const row of rowsBassFirst) {
+              for (let gi = 0; gi < row.built.sliceGroups.length; gi++) {
+                const g = row.built.sliceGroups[gi]!
                 const fresh = g.filter((s) => !s.tieFromPrev)
                 if (
                   fresh[0] &&
                   Math.abs(fresh[0].time - mark.time) <= 0.08
                 ) {
                   sn = row.built.notes[gi]
+                  break
                 }
-              })
+              }
+              if (sn) break
             }
             if (!sn) continue
             const mx = sn.getAbsoluteX()
-            const my = showBass
-              ? bassY - Math.round(CLEF_GAP / 2) - 2
-              : trebleY + STAVE_H - 12
+            // Just above the bass staff top line (not mid-gap / into treble)
+            const my = showBass ? bassY - 3 : trebleY + STAVE_H - 12
             ctx.save()
             ctx.setFont('Times New Roman', 13, 'italic')
             ctx.setFillStyle('#C4B8A0')

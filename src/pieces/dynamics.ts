@@ -20,14 +20,33 @@ export function meanVelocity(
   return sum / notes.length
 }
 
+/** Sampler output level (dB) so marked dynamics are obviously quieter/louder. */
+export function dynamicToDb(label: string): number {
+  switch (label) {
+    case 'pp':
+      return -16
+    case 'p':
+      return -12
+    case 'mp':
+      return -9
+    case 'mf':
+      return -5
+    case 'f':
+      return -2
+    case 'ff':
+      return 0
+    default:
+      return -5
+  }
+}
+
 /**
- * Audible gain from MIDI velocity — wider than Tone's default so mp/mf
- * contrast is obvious on Salamander samples.
+ * Per-note gain. mf (~0.6) ≈ 0.75; mp (~0.45) ≈ 0.35 — clear step down.
  */
 export function velocityToGain(velocity: number): number {
   const x = Math.max(0.05, Math.min(1, velocity))
-  // mp (~0.45) → ~0.32, mf (~0.6) → ~0.52, f (~0.8) → ~0.78
-  return 0.1 + Math.pow(x, 1.75) * 0.9
+  const relativeToMf = x / 0.6
+  return Math.max(0.12, Math.min(1, Math.pow(relativeToMf, 1.9) * 0.75))
 }
 
 export interface DynamicMark {
