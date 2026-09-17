@@ -1,6 +1,11 @@
 import * as Tone from 'tone'
 import type { PieceNote } from './types'
-import { velocityToGain } from './dynamics'
+import {
+  dynamicToDb,
+  meanVelocity,
+  velocityToDynamic,
+  velocityToGain,
+} from './dynamics'
 
 /** Salamander Grand samples hosted by Tone.js (subset; Sampler interpolates). */
 const SALAMANDER_URLS: Record<string, string> = {
@@ -112,6 +117,11 @@ export async function playPianoNotes(
   const endSec =
     sorted.reduce((m, n) => Math.max(m, n.time + n.duration), originSec) + 0.15
 
+  // Whole-demo level from the opening dynamic (mp song plays quieter than mf)
+  const openLabel = velocityToDynamic(meanVelocity(sorted.slice(0, 12)))
+  const baseDb = s.volume.value
+  s.volume.value = dynamicToDb(openLabel)
+
   const events: Array<{ time: number } & PartEv> = sorted.map((n) => {
     const t = (n.time - originSec) / tempoFactor
     const dur = Math.min(
@@ -150,6 +160,7 @@ export async function playPianoNotes(
       /* already disposed */
     }
     s.releaseAll()
+    s.volume.value = baseDb
     Tone.Transport.stop()
     Tone.Transport.cancel(0)
     Tone.Transport.seconds = 0

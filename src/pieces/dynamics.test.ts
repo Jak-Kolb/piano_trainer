@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   dynamicMarksForPiece,
+  dynamicToDb,
   meanVelocity,
   velocityToDynamic,
   velocityToGain,
@@ -47,10 +48,9 @@ describe('dynamicMarksForPiece', () => {
   })
 })
 
-describe('velocityToGain', () => {
+describe('velocityToGain / dynamicToDb', () => {
   it('makes mp clearly quieter than mf', () => {
-    const mp = velocityToGain(0.45)
-    const mf = velocityToGain(0.6)
-    expect(mf / mp).toBeGreaterThan(1.4)
+    expect(velocityToGain(0.6) / velocityToGain(0.45)).toBeGreaterThan(1.6)
+    expect(dynamicToDb('mf') - dynamicToDb('mp')).toBeGreaterThanOrEqual(3)
   })
 })
