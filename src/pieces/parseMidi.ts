@@ -8,10 +8,18 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
       ? 60 / (midi.header.tempos[0]!.bpm || 120)
       : 0.5
 
+  const ts = midi.header.timeSignatures[0]
+  const beatsPerBar = ts ? ts.timeSignature[0] || 4 : 4
+
   const notes: PieceNote[] = []
   midi.tracks.forEach((track, trackIndex) => {
     for (const n of track.notes) {
-      const measure = Math.max(1, Math.floor(n.time / (secPerQuarter * 4)) + 1)
+      // Prefer Tone's bar position when present; else derive from time
+      const barFloat =
+        typeof (n as { bars?: number }).bars === 'number'
+          ? (n as { bars: number }).bars
+          : n.time / (secPerQuarter * beatsPerBar)
+      const measure = Math.max(1, Math.floor(barFloat) + 1)
       notes.push({
         midi: n.midi,
         time: n.time,
@@ -30,7 +38,7 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
   const measureCount = Math.max(
     1,
     ...notes.map((n) => n.measure),
-    Math.ceil(durationSec / (secPerQuarter * 4)),
+    Math.ceil(durationSec / (secPerQuarter * beatsPerBar)),
   )
 
   const activeTracks = new Set(notes.map((n) => n.track))
@@ -59,7 +67,6 @@ export function filterNotes(
   if (!hasTwoHands || hands === 'both') return inLoop
   const tracks = [...new Set(inLoop.map((n) => n.track))].sort((a, b) => a - b)
   if (tracks.length < 2) return inLoop
-  // Convention: first track RH, last track LH (common in simple piano MIDIs)
   const rh = tracks[0]!
   const lh = tracks[tracks.length - 1]!
   return inLoop.filter((n) => (hands === 'right' ? n.track === rh : n.track === lh))
@@ -67,7 +74,6 @@ export function filterNotes(
 
 /**
  * Group notes that start together into one step (chords / both hands).
- * Default ~120ms so slight RH/LH MIDI offsets still count as one chord.
  */
 export function groupSteps(
   notes: PieceNote[],

@@ -21,7 +21,6 @@ export function midiToVexKey(midi: number): string {
   return `${PC_NAMES[pc]}/${oct}`
 }
 
-/** Map note duration in seconds to a VexFlow duration letter. */
 export function durationToVex(
   durationSec: number,
   secPerQuarter: number,
@@ -32,6 +31,44 @@ export function durationToVex(
   if (beats >= 0.875) return 'q'
   if (beats >= 0.4) return '8'
   return '16'
+}
+
+export function vexDurationBeats(dur: string): number {
+  switch (dur) {
+    case 'w':
+      return 4
+    case 'h':
+      return 2
+    case 'q':
+      return 1
+    case '8':
+      return 0.5
+    case '16':
+      return 0.25
+    default:
+      return 1
+  }
+}
+
+/** Rest duration letters to fill remaining beats in 4/4. */
+export function restDurationsForBeats(beats: number): string[] {
+  const out: string[] = []
+  let left = Math.round(beats * 4) / 4 // quarter-grid
+  if (left <= 0) return out
+  const table: [number, string][] = [
+    [4, 'w'],
+    [2, 'h'],
+    [1, 'q'],
+    [0.5, '8'],
+    [0.25, '16'],
+  ]
+  for (const [b, d] of table) {
+    while (left >= b - 0.001) {
+      out.push(d)
+      left -= b
+    }
+  }
+  return out
 }
 
 export function notesInMeasure(

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
 import { pitchClassesMatchChord } from '../theory'
+import { mediansForDraw, recordAttempt } from '../storage/triadStats'
 import {
   DEFAULT_QUALITIES,
   SESSION_LENGTH,
@@ -30,6 +31,9 @@ export function TriadRecall({
   const [prompt, setPrompt] = useState<TriadPrompt>(() =>
     drawPrompt(DEFAULT_QUALITIES, {}),
   )
+  const [persistedMedians, setPersistedMedians] = useState<
+    Record<string, number>
+  >({})
   const [attempts, setAttempts] = useState<AttemptRecord[]>([])
   const [streak, setStreak] = useState(0)
   const [startedAt, setStartedAt] = useState(() => performance.now())
@@ -45,6 +49,22 @@ export function TriadRecall({
   const phaseRef = useRef(phase)
   phaseRef.current = phase
 
+  useEffect(() => {
+    let cancelled = false
+    void mediansForDraw().then((m) => {
+      if (cancelled) return
+      setPersistedMedians(m)
+      setPrompt((current) =>
+        Object.keys(m).length === 0
+          ? current
+          : drawPrompt(DEFAULT_QUALITIES, m, current.id),
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const autoGrade =
     input.supportsAutomaticGrade() &&
     input.id === 'midi' &&
@@ -55,10 +75,10 @@ export function TriadRecall({
     for (const a of attempts) {
       ;(map[a.prompt.id] ??= []).push(a.ms)
     }
-    const out: Record<string, number> = {}
-    for (const [id, times] of Object.entries(map)) out[id] = median(times)
-    return out
-  }, [attempts])
+    const session: Record<string, number> = {}
+    for (const [id, times] of Object.entries(map)) session[id] = median(times)
+    return { ...persistedMedians, ...session }
+  }, [attempts, persistedMedians])
 
   const advance = useCallback(
     (missed?: TriadPrompt) => {
@@ -104,6 +124,7 @@ export function TriadRecall({
         ...prev,
         { prompt: promptRef.current, correct, ms },
       ])
+      void recordAttempt(promptRef.current.id, ms, correct)
       setFlash(correct ? 'hit' : 'miss')
       setStreak((s) => (correct ? s + 1 : 0))
       setPhase('revealed')
