@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
 import {
+  formatMs,
+  getBestMs,
+  recordCompletion,
+} from '../storage/techniqueTimes'
+import {
   fingeringFor,
   formatPitch,
   twoOctaveArpeggioNotes,
@@ -26,7 +31,15 @@ export function ScaleDrill({
   const [step, setStep] = useState(0)
   const [done, setDone] = useState(false)
   const [streak, setStreak] = useState(0)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [lastMs, setLastMs] = useState<number | null>(null)
+  const [bestMs, setBestMs] = useState<number | null>(() =>
+    getBestMs(kind, 'C major', 'right'),
+  )
+  const [isNewBest, setIsNewBest] = useState(false)
   const advancedForStep = useRef(false)
+  const startedAt = useRef<number | null>(null)
+  const tickRef = useRef(0)
 
   const fingering = useMemo(() => {
     if (kind === 'arpeggio') {
@@ -57,18 +70,37 @@ export function ScaleDrill({
     kind === 'scale' ? !fingeringFor(key, hand, 'scale')?.verified : true
   const label = kind === 'scale' ? 'Scale' : 'Arpeggio'
 
+  const ensureTimer = () => {
+    if (startedAt.current === null) startedAt.current = performance.now()
+  }
+
   const restart = () => {
     setDone(false)
     setStep(0)
+    setElapsedMs(0)
+    setLastMs(null)
+    setIsNewBest(false)
     advancedForStep.current = false
+    startedAt.current = null
+    setBestMs(getBestMs(kind, key, hand))
+  }
+
+  const completeRun = () => {
+    const ms = Math.round(performance.now() - (startedAt.current ?? performance.now()))
+    setLastMs(ms)
+    const result = recordCompletion(kind, key, hand, ms)
+    setBestMs(result.bestMs)
+    setIsNewBest(result.isNewBest)
+    setDone(true)
+    setStreak((s) => s + 1)
   }
 
   const advanceFromMatch = () => {
     if (advancedForStep.current || done) return
+    ensureTimer()
     advancedForStep.current = true
     if (step >= notes.length - 1) {
-      setDone(true)
-      setStreak((s) => s + 1)
+      completeRun()
       return
     }
     setStep((s) => s + 1)
@@ -81,6 +113,18 @@ export function ScaleDrill({
   useEffect(() => {
     advancedForStep.current = false
   }, [step])
+
+  // Live elapsed while running
+  useEffect(() => {
+    if (done) return
+    const id = window.setInterval(() => {
+      if (startedAt.current !== null) {
+        setElapsedMs(Math.round(performance.now() - startedAt.current))
+      }
+    }, 100)
+    tickRef.current = id
+    return () => window.clearInterval(id)
+  }, [done, key, hand, kind])
 
   useEffect(() => {
     if (!current || done) return
@@ -114,7 +158,18 @@ export function ScaleDrill({
       <DrillFrame status={input.getStatus()} streak={streak} onExit={onExit}>
         <p className="font-display text-4xl text-brass">{label} complete</p>
         <p className="mt-3 font-ui text-dust">
-          {kind === 'scale' ? key : key.replace('major', 'arpeggio')} · {hand === 'right' ? 'RH' : 'LH'}
+          {kind === 'scale' ? key : key.replace('major', 'arpeggio')} ·{' '}
+          {hand === 'right' ? 'RH' : 'LH'}
+        </p>
+        <p className="mt-6 font-display text-3xl text-ivory">
+          {lastMs !== null ? formatMs(lastMs) : '—'}
+        </p>
+        <p className="mt-2 font-ui text-dust">
+          Best{' '}
+          <span className="text-brass">
+            {bestMs !== null ? formatMs(bestMs) : '—'}
+          </span>
+          {isNewBest ? ' · new best' : ''}
         </p>
         <button
           type="button"
@@ -142,8 +197,8 @@ export function ScaleDrill({
       footer={
         <SelfReportButtons
           onHit={() => {
-            setStreak((s) => s + 1)
-            restart()
+            ensureTimer()
+            completeRun()
           }}
           onMiss={() => {
             setStreak(0)
@@ -184,6 +239,10 @@ export function ScaleDrill({
       <p className="font-display text-3xl text-ivory">
         {kind === 'scale' ? key : key.replace('major', 'arpeggio')}
       </p>
+      <p className="mt-2 font-ui text-sm text-dust">
+        Time {startedAt.current ? formatMs(elapsedMs) : '0.0s'} · Best{' '}
+        {bestMs !== null ? formatMs(bestMs) : '—'}
+      </p>
       <p className="mt-1 font-ui text-sm text-dust">
         MIDI needs the correct octave (C4 ≠ C5)
       </p>
@@ -214,12 +273,9 @@ export function ScaleDrill({
         type="button"
         className="mt-3 min-h-12 px-4 font-ui text-dust"
         onClick={() => {
-          if (step >= notes.length - 1) {
-            setDone(true)
-            setStreak((s) => s + 1)
-          } else {
-            setStep((s) => s + 1)
-          }
+          ensureTimer()
+          if (step >= notes.length - 1) completeRun()
+          else setStep((s) => s + 1)
         }}
       >
         {step >= notes.length - 1 ? 'Finish' : 'Next note'}

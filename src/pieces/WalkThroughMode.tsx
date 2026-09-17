@@ -104,6 +104,7 @@ export function WalkThroughMode({
             measure={measure}
             activeMidis={activeMidis}
             secPerQuarter={parsed.secPerQuarter}
+            measureCount={Math.max(controls.loopEndMeasure, parsed.measureCount)}
           />
         )}
         {(view === 'roll' || view === 'both') && (

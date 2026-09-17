@@ -1,28 +1,88 @@
 import { useEffect, useRef } from 'react'
-import { Accidental, Formatter, Renderer, Stave, StaveNote, Voice } from 'vexflow'
+import {
+  Accidental,
+  Barline,
+  Formatter,
+  Renderer,
+  Stave,
+  StaveNote,
+  Voice,
+} from 'vexflow'
 import type { PieceNote } from './types'
 import { durationToVex, midiToVexKey, notesInMeasure } from './midiToVex'
 
+const BARS_PER_SYSTEM = 4
+
 interface Props {
   notes: PieceNote[]
-  /** Measure to draw (1-based). */
+  /** Current walk-through measure (1-based) — system scrolls to include this. */
   measure: number
-  /** MIDI numbers in the current walk-through step — highlighted. */
   activeMidis: number[]
   secPerQuarter: number
+  /** Last measure available in the loop/piece. */
+  measureCount: number
   width?: number
 }
 
+function groupOnsets(pool: PieceNote[], windowSec = 0.12): PieceNote[][] {
+  if (!pool.length) return []
+  const sorted = [...pool].sort((a, b) => a.time - b.time || a.midi - b.midi)
+  const groups: PieceNote[][] = []
+  let cur: PieceNote[] = [sorted[0]!]
+  let anchor = sorted[0]!.time
+  for (let i = 1; i < sorted.length; i++) {
+    const n = sorted[i]!
+    if (n.time - anchor <= windowSec) cur.push(n)
+    else {
+      groups.push(cur)
+      cur = [n]
+      anchor = n.time
+    }
+  }
+  groups.push(cur)
+  return groups
+}
+
+function toStaveNotes(
+  groups: PieceNote[][],
+  clef: 'treble' | 'bass',
+  secPerQuarter: number,
+  active: Set<number>,
+): StaveNote[] {
+  return groups.map((g) => {
+    const keys = g.map((n) => midiToVexKey(n.midi))
+    const dur = durationToVex(
+      Math.max(...g.map((n) => n.duration)),
+      secPerQuarter,
+    )
+    const sn = new StaveNote({ keys, duration: dur, clef })
+    keys.forEach((k, i) => {
+      const pitch = k.split('/')[0]!
+      if (pitch.includes('#')) sn.addModifier(new Accidental('#'), i)
+      else if (pitch.endsWith('bb')) sn.addModifier(new Accidental('bb'), i)
+      else if (pitch.length > 1 && pitch.endsWith('b'))
+        sn.addModifier(new Accidental('b'), i)
+    })
+    const isActive = g.some((n) => active.has(n.midi))
+    sn.setStyle({
+      fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
+      strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
+    })
+    return sn
+  })
+}
+
 /**
- * Renders one measure as treble and/or bass staves from MIDI-derived notes.
- * Enharmonics are approximate (MIDI has no spelling) — good enough to follow along.
+ * Multi-bar system like reading music: 4 measures per line, notes spaced
+ * by rhythm (not stretched to fill one bar).
  */
 export function StaffNotation({
   notes,
   measure,
   activeMidis,
   secPerQuarter,
-  width = 720,
+  measureCount,
+  width = 900,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
 
@@ -31,19 +91,25 @@ export function StaffNotation({
     if (!el) return
     el.innerHTML = ''
 
-    const inBar = notesInMeasure(notes, measure)
-    if (!inBar.length) {
+    const start =
+      Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM +
+      1
+    const bars = Array.from({ length: BARS_PER_SYSTEM }, (_, i) => start + i).filter(
+      (m) => m <= measureCount,
+    )
+    if (!bars.length) {
       el.innerHTML =
-        '<p class="font-ui text-dust text-center py-8">Empty bar</p>'
+        '<p class="font-ui text-dust text-center py-8">Empty</p>'
       return
     }
 
-    const trebleNotes = inBar.filter((n) => n.midi >= 60)
-    const bassNotes = inBar.filter((n) => n.midi < 60)
-    const showTreble = trebleNotes.length > 0 || bassNotes.length === 0
-    const showBass = bassNotes.length > 0
-    const staveCount = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
-    const height = 40 + staveCount * 110
+    const systemNotes = notes.filter(
+      (n) => n.measure >= bars[0]! && n.measure <= bars[bars.length - 1]!,
+    )
+    const hasTreble = systemNotes.some((n) => n.midi >= 60) || systemNotes.length === 0
+    const hasBass = systemNotes.some((n) => n.midi < 60)
+    const staveRows = (hasTreble ? 1 : 0) + (hasBass ? 1 : 0)
+    const height = 30 + staveRows * 120
 
     const renderer = new Renderer(el, Renderer.Backends.SVG)
     renderer.resize(width, height)
@@ -52,84 +118,70 @@ export function StaffNotation({
     ctx.setStrokeStyle('#5C6478')
 
     const active = new Set(activeMidis)
-    let y = 20
+    const marginLeft = 16
+    const usable = width - marginLeft - 16
+    const barW = usable / bars.length
 
-    const drawStave = (clef: 'treble' | 'bass', staveNotes: PieceNote[]) => {
-      if (!staveNotes.length && clef === 'bass') return
-      const pool = staveNotes.length ? staveNotes : inBar
-      const stave = new Stave(20, y, width - 40)
-      stave.addClef(clef)
-      stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
-      stave.setContext(ctx).draw()
-
-      // Chord-group notes that share nearly the same start time
-      const groups: PieceNote[][] = []
-      let cur: PieceNote[] = []
-      let anchor = -1
-      for (const n of [...pool].sort((a, b) => a.time - b.time || a.midi - b.midi)) {
-        if (anchor < 0 || n.time - anchor > 0.12) {
-          if (cur.length) groups.push(cur)
-          cur = [n]
-          anchor = n.time
-        } else {
-          cur.push(n)
+    const drawRow = (clef: 'treble' | 'bass', y: number, midiPred: (m: number) => boolean) => {
+      let x = marginLeft
+      bars.forEach((barNum, bi) => {
+        const stave = new Stave(x, y, barW)
+        if (bi === 0) stave.addClef(clef)
+        if (bi === bars.length - 1) {
+          stave.setEndBarType(Barline.type.SINGLE)
         }
-      }
-      if (cur.length) groups.push(cur)
+        // Highlight current bar lightly via thicker left barline feel — use annotation in caption
+        stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
+        stave.setContext(ctx).draw()
 
-      const vfNotes: StaveNote[] = groups.map((g) => {
-        const keys = g.map((n) => midiToVexKey(n.midi))
-        const dur = durationToVex(
-          Math.max(...g.map((n) => n.duration)),
-          secPerQuarter,
-        )
-        const sn = new StaveNote({
-          keys,
-          duration: dur,
-          clef,
-        })
-        // Accidentals from key string
-        keys.forEach((k, i) => {
-          const pitch = k.split('/')[0]!
-          if (pitch.includes('#')) sn.addModifier(new Accidental('#'), i)
-          if (pitch.includes('b')) sn.addModifier(new Accidental('b'), i)
-        })
-        const isActive = g.some((n) => active.has(n.midi))
-        if (isActive) {
-          sn.setStyle({
-            fillStyle: '#C08B3E',
-            strokeStyle: '#C08B3E',
-          })
-        } else {
-          sn.setStyle({
-            fillStyle: '#EDE4D3',
-            strokeStyle: '#EDE4D3',
-          })
+        const inBar = notesInMeasure(notes, barNum).filter((n) => midiPred(n.midi))
+        // If this clef has nothing in the bar but the other might, leave rests empty (simple)
+        const groups = groupOnsets(inBar)
+        if (groups.length) {
+          const vfNotes = toStaveNotes(groups, clef, secPerQuarter, active)
+          const voice = new Voice({ num_beats: 4, beat_value: 4 }).setStrict(false)
+          voice.addTickables(vfNotes)
+          // Tight format width = bar interior so notes sit close like real music
+          const inner = Math.max(40, barW - (bi === 0 ? 36 : 16))
+          new Formatter().joinVoices([voice]).format([voice], inner)
+          voice.draw(ctx, stave)
         }
-        return sn
+
+        // Current-bar marker
+        if (barNum === measure) {
+          ctx.setStrokeStyle('#C08B3E')
+          ctx.setLineWidth(2)
+          ctx.beginPath()
+          ctx.moveTo(x + 2, y + 10)
+          ctx.lineTo(x + 2, y + 90)
+          ctx.stroke()
+          ctx.setLineWidth(1)
+          ctx.setStrokeStyle('#5C6478')
+        }
+
+        x += barW
       })
-
-      if (vfNotes.length) {
-        const voice = new Voice({
-          num_beats: 4,
-          beat_value: 4,
-        }).setStrict(false)
-        voice.addTickables(vfNotes)
-        new Formatter().joinVoices([voice]).format([voice], width - 80)
-        voice.draw(ctx, stave)
-      }
-      y += 110
     }
 
-    if (showTreble) drawStave('treble', trebleNotes)
-    if (showBass) drawStave('bass', bassNotes)
-  }, [notes, measure, activeMidis, secPerQuarter, width])
+    let y = 10
+    if (hasTreble) {
+      drawRow('treble', y, (m) => m >= 60)
+      y += 120
+    }
+    if (hasBass) {
+      drawRow('bass', y, (m) => m < 60)
+    }
+  }, [notes, measure, activeMidis, secPerQuarter, measureCount, width])
+
+  const start =
+    Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM + 1
+  const end = Math.min(measureCount, start + BARS_PER_SYSTEM - 1)
 
   return (
     <div className="w-full overflow-x-auto rounded bg-shadow px-2 py-2">
-      <div ref={host} className="mx-auto" style={{ minHeight: 160 }} />
+      <div ref={host} className="mx-auto" style={{ minHeight: 180 }} />
       <p className="pb-2 text-center font-ui text-xs text-dust">
-        Bar {measure} · staff from MIDI (spellings approximate)
+        Bars {start}–{end} · current {measure} · MIDI spellings approximate
       </p>
     </div>
   )
