@@ -28,3 +28,11 @@ export function midiNames(midis: number[]): string {
     .map((m) => `${names[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`)
     .join(' ')
 }
+
+
+/** All expected MIDI notes must be held at once (both hands / chords). */
+export function midiChordHeld(heldMidi: number[], expected: PieceNote[]): boolean {
+  if (!expected.length) return false
+  const held = new Set(heldMidi)
+  return expected.every((n) => held.has(n.midi))
+}

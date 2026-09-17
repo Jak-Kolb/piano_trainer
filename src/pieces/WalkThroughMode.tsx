@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { InputSource } from '../input'
-import { midiSetMatch, midiNames } from './noteMatch'
-import { filterNotes, groupSteps } from './parseMidi'
+import { midiChordHeld, midiNames } from './noteMatch'
+import { chordWindowSec, filterNotes, groupSteps } from './parseMidi'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
 import { StaffNotation } from './StaffNotation'
@@ -37,7 +37,10 @@ export function WalkThroughMode({
       ),
     [parsed, controls],
   )
-  const steps = useMemo(() => groupSteps(notes), [notes])
+  const steps = useMemo(
+    () => groupSteps(notes, chordWindowSec(parsed.secPerQuarter)),
+    [notes, parsed.secPerQuarter],
+  )
   const [stepIdx, setStepIdx] = useState(0)
   const [view, setView] = useState<ViewMode>('staff')
   const step = steps[stepIdx]
@@ -54,7 +57,7 @@ export function WalkThroughMode({
     return input.onChange(() => {
       const held = input.getHeldMidiNotes()
       if (held.length === 0) return
-      if (midiSetMatch(held, step, true)) {
+      if (midiChordHeld(held, step)) {
         setStepIdx((i) => Math.min(i + 1, Math.max(0, steps.length - 1)))
       }
     })
@@ -62,7 +65,7 @@ export function WalkThroughMode({
 
   const done =
     steps.length > 0 && stepIdx >= steps.length - 1 && step
-      ? midiSetMatch(input.getHeldMidiNotes(), step, true)
+      ? midiChordHeld(input.getHeldMidiNotes(), step)
       : stepIdx >= steps.length
 
   return (
@@ -124,7 +127,9 @@ export function WalkThroughMode({
               </p>
               <p className="mt-2 font-ui text-dust">
                 {input.id === 'midi'
-                  ? 'Play the highlighted notes on the Kawai'
+                  ? step && step.length > 1
+                    ? `Hold all ${step.length} notes together`
+                    : 'Play this note on the Kawai'
                   : 'Switch to MIDI for auto-advance — or use Skip'}
               </p>
             </>

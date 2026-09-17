@@ -67,7 +67,7 @@ export function StaffNotation({
       let cur: PieceNote[] = []
       let anchor = -1
       for (const n of [...pool].sort((a, b) => a.time - b.time || a.midi - b.midi)) {
-        if (anchor < 0 || n.time - anchor > 0.05) {
+        if (anchor < 0 || n.time - anchor > 0.12) {
           if (cur.length) groups.push(cur)
           cur = [n]
           anchor = n.time

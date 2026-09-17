@@ -175,3 +175,24 @@ export function invertNotes(notes: NoteName[], inversion: Inversion): NoteName[]
   }
   return copy
 }
+
+
+/**
+ * Inversion grading: chord pitch classes match, and the lowest held note
+ * is the required bass pitch class (octave free for upper voices).
+ */
+export function inversionVoicingCorrect(
+  heldMidi: number[],
+  chordNotes: NoteName[],
+  bass: NoteName,
+): boolean {
+  if (heldMidi.length === 0) return false
+  const need = new Set(chordNotes.map(pitchClass))
+  const heldPcs = new Set(heldMidi.map((m) => mod12(m)))
+  if (heldPcs.size !== need.size) return false
+  for (const pc of need) {
+    if (!heldPcs.has(pc)) return false
+  }
+  const lowest = Math.min(...heldMidi)
+  return mod12(lowest) === pitchClass(bass)
+}

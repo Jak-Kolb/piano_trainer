@@ -65,25 +65,44 @@ export function filterNotes(
   return inLoop.filter((n) => (hands === 'right' ? n.track === rh : n.track === lh))
 }
 
-/** Group notes that start within a small window into a chord step. */
+/**
+ * Group notes that start together into one step (chords / both hands).
+ * Default ~120ms so slight RH/LH MIDI offsets still count as one chord.
+ */
 export function groupSteps(
   notes: PieceNote[],
-  windowSec = 0.05,
+  windowSec = 0.12,
 ): PieceNote[][] {
   if (!notes.length) return []
+  const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
   const steps: PieceNote[][] = []
-  let current: PieceNote[] = [notes[0]!]
-  let anchor = notes[0]!.time
-  for (let i = 1; i < notes.length; i++) {
-    const n = notes[i]!
+  let current: PieceNote[] = [sorted[0]!]
+  let anchor = sorted[0]!.time
+  for (let i = 1; i < sorted.length; i++) {
+    const n = sorted[i]!
     if (n.time - anchor <= windowSec) {
       current.push(n)
     } else {
-      steps.push(current)
+      steps.push(dedupeMidi(current))
       current = [n]
       anchor = n.time
     }
   }
-  steps.push(current)
+  steps.push(dedupeMidi(current))
   return steps
+}
+
+function dedupeMidi(group: PieceNote[]): PieceNote[] {
+  const seen = new Set<number>()
+  const out: PieceNote[] = []
+  for (const n of group) {
+    if (seen.has(n.midi)) continue
+    seen.add(n.midi)
+    out.push(n)
+  }
+  return out
+}
+
+export function chordWindowSec(secPerQuarter: number): number {
+  return Math.max(0.12, secPerQuarter * 0.2)
 }
