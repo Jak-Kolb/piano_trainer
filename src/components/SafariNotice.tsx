@@ -5,7 +5,7 @@ const isSafari =
 export function SafariNotice() {
   if (!isSafari) return null
   return (
-    <p className="bg-felt px-4 py-2 text-center font-ui text-sm text-ivory">
+    <p className="notice-banner">
       Open Keys in Chrome — Safari does not support Web MIDI.
     </p>
   )

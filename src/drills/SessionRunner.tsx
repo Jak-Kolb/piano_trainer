@@ -109,7 +109,7 @@ export function SessionRunner({
         </p>
         <button
           type="button"
-          className="mt-8 min-h-16 bg-brass px-8 font-ui text-lg text-ink"
+          className="mt-8 btn btn-primary min-h-16 px-8 text-lg"
           onClick={onExit}
         >
           Done
@@ -127,14 +127,14 @@ export function SessionRunner({
         <>
           <button
             type="button"
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
             onClick={() => setPaused((p) => !p)}
           >
             {paused ? 'Resume' : 'Pause'}
           </button>
           <button
             type="button"
-            className="min-h-16 flex-1 bg-brass font-ui text-lg text-ink"
+            className="btn btn-primary min-h-16 flex-1 text-lg"
             onClick={skipBlock}
           >
             Next block

@@ -68,7 +68,7 @@ export default function App() {
   }
 
   if (!input) {
-    return <div className="flex h-full items-center justify-center bg-ink font-ui text-dust">Loading…</div>
+    return <div className="flex h-full items-center justify-center font-ui text-dust">Loading…</div>
   }
 
   if (nav.screen === 'drill') {

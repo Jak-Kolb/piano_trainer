@@ -27,13 +27,9 @@ export function DrillFrame({
   footer?: ReactNode
 }) {
   return (
-    <div className="flex h-full flex-col bg-ink">
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <button
-          type="button"
-          onClick={onExit}
-          className="min-h-11 shrink-0 px-3 font-ui text-dust"
-        >
+    <div className="flex h-full flex-col bg-transparent">
+      <div className="topbar">
+        <button type="button" onClick={onExit} className="btn btn-ghost shrink-0">
           Exit
         </button>
         <div className="min-w-0 flex-1 text-center">
@@ -65,7 +61,11 @@ export function DrillFrame({
         {children}
       </div>
       {keyboard}
-      {footer && <div className="flex flex-wrap gap-3 p-4 pb-6">{footer}</div>}
+      {footer && (
+        <div className="flex flex-wrap gap-3 border-t border-dust/15 bg-[rgba(12,18,32,0.55)] p-4 pb-6">
+          {footer}
+        </div>
+      )}
     </div>
   )
 }

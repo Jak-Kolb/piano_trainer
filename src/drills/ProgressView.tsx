@@ -97,7 +97,7 @@ export function ProgressView({ onExit }: { onExit: () => void }) {
         <label className="block font-ui text-sm text-dust">
           External assessment score
           <input
-            className="mt-2 min-h-12 w-full bg-shadow px-3 font-ui text-ivory outline-none"
+            className="field-input mt-2 min-h-12 w-full px-3 text-base outline-none"
             value={p.assessmentScore}
             onChange={(e) => update({ ...p, assessmentScore: e.target.value })}
           />
@@ -118,14 +118,14 @@ export function ProgressView({ onExit }: { onExit: () => void }) {
           </ul>
           <div className="mt-3 flex gap-2">
             <input
-              className="min-h-12 flex-1 bg-shadow px-3 font-ui text-ivory outline-none"
+              className="field-input min-h-12 flex-1 px-3 text-base outline-none"
               placeholder="Piece name"
               value={pieceName}
               onChange={(e) => setPieceName(e.target.value)}
             />
             <button
               type="button"
-              className="min-h-12 bg-brass px-4 font-ui text-ink"
+              className="btn btn-primary min-h-12 px-4"
               onClick={() => {
                 if (!pieceName.trim()) return
                 update({
@@ -152,9 +152,11 @@ export function ProgressView({ onExit }: { onExit: () => void }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="font-ui text-sm text-dust">{label}</p>
-      <p className="font-display text-4xl text-ivory">{value}</p>
+    <div className="surface-panel px-4 py-3">
+      <p className="font-ui text-sm uppercase tracking-[0.12em] text-dust">
+        {label}
+      </p>
+      <p className="mt-1 font-display text-3xl text-ivory">{value}</p>
     </div>
   )
 }

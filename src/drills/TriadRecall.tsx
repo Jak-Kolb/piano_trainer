@@ -222,7 +222,7 @@ export function TriadRecall({
     const slowest = [...attempts].sort((a, b) => b.ms - a.ms).slice(0, 3)
 
     return (
-      <div className="flex h-full flex-col bg-ink">
+      <div className="flex h-full flex-col bg-transparent">
         <TopBar
           streak={streak}
           onExit={onExit}
@@ -250,7 +250,7 @@ export function TriadRecall({
           <button
             type="button"
             onClick={onExit}
-            className="mt-4 min-h-16 min-w-[12rem] bg-brass px-8 font-ui text-lg font-medium text-ink"
+            className="btn btn-primary mt-4 min-h-16 min-w-[12rem] px-8 text-lg font-medium"
           >
             Done
           </button>
@@ -262,7 +262,7 @@ export function TriadRecall({
   return (
     <div
       className={`flex h-full flex-col duration-100 ${
-        flash === 'hit' ? 'bg-brass' : flash === 'miss' ? 'bg-felt' : 'bg-ink'
+        flash === 'hit' ? 'bg-brass' : flash === 'miss' ? 'bg-felt' : 'bg-transparent'
       }`}
     >
       <TopBar
@@ -273,7 +273,7 @@ export function TriadRecall({
         accuracy={accuracy}
       />
       {micFallsBackToSelfReport && (
-        <p className="bg-shadow px-4 py-2 text-center font-ui text-sm text-dust">
+        <p className="surface-inset px-4 py-2 text-center font-ui text-sm text-dust">
           Mic is monophonic — chord drills use Hit / Miss. Hearing a pitch still
           shows above.
         </p>
@@ -297,7 +297,7 @@ export function TriadRecall({
               type="button"
               onClick={() => void onPlayIt()}
               disabled={playing}
-              className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+              className="btn btn-secondary min-h-16 flex-1 text-lg"
             >
               {playing ? 'Playing…' : 'Play it'}
             </button>
@@ -306,14 +306,14 @@ export function TriadRecall({
                 <button
                   type="button"
                   onClick={showAnswer}
-                  className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+                  className="btn btn-secondary min-h-16 flex-1 text-lg"
                 >
                   Show me
                 </button>
                 <button
                   type="button"
                   onClick={() => grade(true)}
-                  className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
+                  className="btn btn-primary min-h-16 flex-1 text-lg font-medium"
                 >
                   Hit
                 </button>
@@ -340,14 +340,14 @@ export function TriadRecall({
               type="button"
               onClick={() => void onPlayIt()}
               disabled={playing}
-              className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+              className="btn btn-secondary min-h-16 flex-1 text-lg"
             >
               {playing ? 'Playing…' : 'Play it'}
             </button>
             <button
               type="button"
               onClick={() => grade(true)}
-              className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
+              className="btn btn-primary min-h-16 flex-1 text-lg font-medium"
             >
               Hit
             </button>
@@ -365,7 +365,7 @@ export function TriadRecall({
             type="button"
             onClick={() => void onPlayIt()}
             disabled={playing}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
           >
             {playing ? 'Playing…' : 'Play it'}
           </button>

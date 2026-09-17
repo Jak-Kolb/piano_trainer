@@ -342,7 +342,7 @@ export function WalkThroughMode({
             : null
 
   return (
-    <div className="flex h-full flex-col bg-ink">
+    <div className="flex h-full flex-col bg-transparent">
       <Header
         title={title}
         status={
@@ -361,7 +361,7 @@ export function WalkThroughMode({
         hasTwoHands={parsed.hasTwoHands}
         onChange={onControls}
       />
-      <div className="flex flex-wrap items-center gap-1.5 px-3 py-1">
+      <div className="toolbar-row">
         {(
           [
             ['staff', 'Sheet'],
@@ -373,19 +373,19 @@ export function WalkThroughMode({
             key={id}
             type="button"
             onClick={() => setView(id)}
-            className={`h-7 px-3 text-sm font-ui ${
-              view === id ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+            className={`btn btn-chip ${
+              view === id ? 'btn-chip-active' : 'btn-chip-idle'
             }`}
           >
             {label}
           </button>
         ))}
-        <span className="mx-1 h-5 w-px bg-dust/30" />
+        <span className="divider-v" />
         {demo ? (
           <button
             type="button"
             onClick={stopDemo}
-            className="h-7 bg-felt px-3 text-sm font-ui text-ivory"
+            className="btn btn-chip btn-danger"
           >
             Stop
           </button>
@@ -393,7 +393,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled
-            className="h-7 bg-shadow px-3 text-sm font-ui text-dust"
+            className="btn btn-chip btn-chip-idle"
           >
             Loading…
           </button>
@@ -402,21 +402,21 @@ export function WalkThroughMode({
             <button
               type="button"
               onClick={() => void startDemo('song')}
-              className="h-7 bg-brass px-3 text-sm font-ui text-ink"
+              className="btn btn-chip btn-chip-active"
             >
               Play song
             </button>
             <button
               type="button"
               onClick={() => void startDemo('line')}
-              className="h-7 bg-shadow px-3 text-sm font-ui text-ivory"
+              className="btn btn-chip btn-chip-idle !text-ivory"
             >
               Play line
             </button>
             <button
               type="button"
               onClick={() => void startDemo('bar')}
-              className="h-7 bg-shadow px-3 text-sm font-ui text-ivory"
+              className="btn btn-chip btn-chip-idle !text-ivory"
             >
               Play bar
             </button>
@@ -424,7 +424,7 @@ export function WalkThroughMode({
               <button
                 type="button"
                 onClick={() => void startDemo('selection')}
-                className="h-7 bg-brass px-3 text-sm font-ui text-ink"
+                className="btn btn-chip btn-chip-active"
               >
                 Play sel {selLo}
                 {selHi !== selLo ? `–${selHi}` : ''}
@@ -437,7 +437,7 @@ export function WalkThroughMode({
                   setSelection(null)
                   selectAnchor.current = null
                 }}
-                className="h-7 bg-shadow px-2 text-sm font-ui text-dust"
+                className="btn btn-chip btn-chip-idle"
               >
                 Clear
               </button>
@@ -445,7 +445,7 @@ export function WalkThroughMode({
           </>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2">
         <div className="shrink-0">
           {(view === 'staff' || view === 'both') && (
             <StaffNotation
@@ -477,7 +477,7 @@ export function WalkThroughMode({
           )}
         </div>
       </div>
-      <div className="flex shrink-0 flex-col gap-1 border-t border-dust/20 px-2 py-1">
+      <div className="flex shrink-0 flex-col gap-1.5 border-t border-dust/20 bg-[rgba(12,18,32,0.7)] px-3 py-2">
         <p className="text-center font-ui text-xs text-dust">
           {steps.length === 0
             ? 'No notes in this loop / hand filter.'
@@ -501,7 +501,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
+            className="btn btn-secondary h-8 flex-1 text-xs"
             onClick={jumpSongStart}
           >
             Song
@@ -509,7 +509,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
+            className="btn btn-secondary h-8 flex-1 text-xs"
             onClick={jumpBarStart}
           >
             Bar
@@ -517,7 +517,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo || displayMeasure <= controls.loopStartMeasure}
-            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
+            className="btn btn-secondary h-8 flex-1 text-xs"
             onClick={jumpPrevMeasure}
           >
             Back
@@ -528,7 +528,7 @@ export function WalkThroughMode({
               !!demo ||
               displayMeasure >= Math.min(controls.loopEndMeasure, maxMeasure)
             }
-            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
+            className="btn btn-secondary h-8 flex-1 text-xs"
             onClick={jumpNextMeasure}
           >
             Next
@@ -536,7 +536,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="h-8 flex-1 bg-brass text-xs font-ui text-ink disabled:opacity-40"
+            className="btn btn-primary h-8 flex-1 text-xs"
             onClick={() =>
               setStepIdx((i) => Math.min(steps.length - 1, i + 1))
             }
@@ -559,11 +559,11 @@ function Header({
   onExit: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+    <div className="topbar">
       <button
         type="button"
         onClick={onExit}
-        className="h-7 shrink-0 px-2 text-sm font-ui text-dust"
+        className="btn btn-ghost h-8 shrink-0"
       >
         Exit
       </button>
