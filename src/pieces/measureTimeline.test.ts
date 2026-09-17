@@ -180,8 +180,10 @@ describe('Interstellar MIDI (optional)', () => {
       expect(parsed.measures[0]!.startSec).toBeCloseTo(0, 2)
       expect(parsed.measures[0]!.beatsPerBar).toBe(3)
       expect(parsed.measures[99]!.startSec).toBeCloseTo(207.86, 1)
-      expect(parsed.measures[193]!.startSec).toBeCloseTo(432.86, 1)
-      expect(parsed.measures[193]!.beatsPerBar).toBe(4)
+      // Index i = measure i+1 = Tone bar i. 4/4 starts at Tone bar 194.
+      expect(parsed.measures[193]!.beatsPerBar).toBe(3)
+      expect(parsed.measures[194]!.startSec).toBeCloseTo(432.86, 1)
+      expect(parsed.measures[194]!.beatsPerBar).toBe(4)
     },
   )
 })
