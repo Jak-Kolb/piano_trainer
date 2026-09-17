@@ -31,6 +31,8 @@ export interface ParsedPiece {
   ppq: number
   /** seconds per quarter at file tempo (first tempo) */
   secPerQuarter: number
+  /** VexFlow key name, e.g. "G" or "Em". Defaults to "C". */
+  keySignature: string
 }
 
 export interface PieceControls {

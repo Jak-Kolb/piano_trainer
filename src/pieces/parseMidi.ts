@@ -44,6 +44,23 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
   const activeTracks = new Set(notes.map((n) => n.track))
   const hasTwoHands = activeTracks.size >= 2
 
+  const ks = midi.header.keySignatures[0]
+  let keySignature = 'C'
+  if (ks) {
+    // Tone: key is major tonic (e.g. "G"); scale is "major" | "minor"
+    keySignature =
+      ks.scale === 'minor'
+        ? ks.key.endsWith('m')
+          ? ks.key
+          : `${ks.key}m`
+        : ks.key
+  } else {
+    // No key meta — light heuristic so G-major songs don't stamp # on every F
+    const fSharp = notes.filter((n) => ((n.midi % 12) + 12) % 12 === 6).length
+    const fNat = notes.filter((n) => ((n.midi % 12) + 12) % 12 === 5).length
+    if (fSharp > 8 && fSharp > fNat * 3) keySignature = 'G'
+  }
+
   return {
     notes,
     durationSec,
@@ -51,6 +68,7 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
     hasTwoHands,
     ppq: midi.header.ppq,
     secPerQuarter,
+    keySignature,
   }
 }
 

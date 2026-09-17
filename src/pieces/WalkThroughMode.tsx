@@ -364,6 +364,7 @@ export function WalkThroughMode({
               measureCount={maxMeasure}
               selection={selection}
               onMeasurePointer={onMeasurePointer}
+              keySignature={parsed.keySignature}
             />
           )}
           {(view === 'staff' || view === 'both') && (

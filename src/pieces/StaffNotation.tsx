@@ -18,6 +18,7 @@ import {
   type NoteSlice,
 } from './tieSlices'
 import type { PieceNote } from './types'
+import { writtenAccidental } from './keySig'
 import {
   durationToVex,
   midiToVexKey,
@@ -37,6 +38,8 @@ interface Props {
   measureCount: number
   selection: { start: number; end: number } | null
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
+  /** VexFlow key, e.g. "G" or "Em". */
+  keySignature?: string
 }
 
 function groupSlices(pool: NoteSlice[], windowSec = 0.12): NoteSlice[][] {
@@ -123,6 +126,7 @@ function buildVoiceNotes(
   secPerQuarter: number,
   activeNotes: PieceNote[],
   measure: number,
+  keySignature: string,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -155,12 +159,10 @@ function buildVoiceNotes(
     const keys = g.map((s) => midiToVexKey(s.midi))
     const sn = new StaveNote({ keys, duration: dur.key, clef })
     keys.forEach((k, i) => {
-      const pitch = k.split('/')[0]!
       if (g[i]?.tieFromPrev) return
-      if (pitch.includes('#')) sn.addModifier(new Accidental('#'), i)
-      else if (pitch.endsWith('bb')) sn.addModifier(new Accidental('bb'), i)
-      else if (pitch.length > 1 && pitch.endsWith('b'))
-        sn.addModifier(new Accidental('b'), i)
+      const pitch = k.split('/')[0]!
+      const acc = writtenAccidental(pitch, keySignature)
+      if (acc) sn.addModifier(new Accidental(acc), i)
     })
     applyDots(sn, dur.dots, keys.length)
     const isActive = isActiveGroup(g, activeNotes)
@@ -203,6 +205,7 @@ export function StaffNotation({
   measureCount,
   selection,
   onMeasurePointer,
+  keySignature = 'C',
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -315,7 +318,12 @@ export function StaffNotation({
 
           if (showTreble) {
             const stave = new Stave(x, trebleY, barW)
-            if (bi === 0) stave.addClef('treble')
+            if (bi === 0) {
+              stave.addClef('treble')
+              if (keySignature && keySignature !== 'C') {
+                stave.addKeySignature(keySignature)
+              }
+            }
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
             stave.setContext(ctx).draw()
@@ -326,13 +334,19 @@ export function StaffNotation({
               secPerQuarter,
               activeNotes,
               barNum,
+              keySignature,
             )
             staves.push({ clef: 'treble', stave, built })
           }
 
           if (showBass) {
             const stave = new Stave(x, bassY, barW)
-            if (bi === 0) stave.addClef('bass')
+            if (bi === 0) {
+              stave.addClef('bass')
+              if (keySignature && keySignature !== 'C') {
+                stave.addKeySignature(keySignature)
+              }
+            }
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
             stave.setContext(ctx).draw()
@@ -343,6 +357,7 @@ export function StaffNotation({
               secPerQuarter,
               activeNotes,
               barNum,
+              keySignature,
             )
             staves.push({ clef: 'bass', stave, built })
           }
@@ -432,7 +447,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection])
+  }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection, keySignature])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM +
