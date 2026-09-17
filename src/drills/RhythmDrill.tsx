@@ -80,7 +80,7 @@ export function RhythmDrill({
       footer={
         <button
           type="button"
-          className="min-h-16 flex-1 bg-brass font-ui text-lg text-ink"
+          className="btn btn-primary min-h-16 flex-1 text-lg"
           onClick={running ? tap : start}
         >
           {running ? 'Tap' : 'Start bar'}
@@ -99,7 +99,7 @@ export function RhythmDrill({
           <div key={p} className="flex flex-col items-center gap-2">
             <div
               className={`h-24 w-16 ${
-                taps.length > i ? 'bg-brass' : 'bg-shadow'
+                taps.length > i ? 'rounded-[var(--radius-sm)] bg-brass' : 'surface-panel'
               }`}
             />
             <span className="font-ui text-sm text-dust">{LABELS[i]}</span>

@@ -73,21 +73,17 @@ export function SettingsScreen({ initial, onBack, onSave }: Props) {
   const gatePct = Math.min(100, (gate / meterMax) * 100)
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-ink">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-12 px-3 font-ui text-dust"
-        >
+    <div className="page-shell">
+      <div className="topbar">
+        <button type="button" onClick={onBack} className="btn btn-ghost">
           Home
         </button>
-        <h1 className="font-display text-xl text-ivory">Settings</h1>
+        <h1 className="page-title text-xl">Settings</h1>
         <span className="w-16" />
       </div>
 
-      <main className="mx-auto w-full max-w-lg space-y-8 px-6 pb-12">
-        <section className="space-y-3 rounded bg-shadow px-4 py-4">
+      <main className="page-main page-main--settings space-y-8">
+        <section className="surface-panel space-y-3 px-4 py-4">
           <p className="font-ui text-sm text-dust">Live preview</p>
           <p
             className={`font-display text-3xl ${
@@ -96,13 +92,13 @@ export function SettingsScreen({ initial, onBack, onSave }: Props) {
           >
             {previewNote ? `Hearing ${previewNote}` : previewStatus}
           </p>
-          <div className="relative h-4 w-full overflow-hidden bg-ink">
+          <div className="meter-track">
             <div
-              className="absolute inset-y-0 left-0 bg-ivory/40"
+              className="meter-fill"
               style={{ width: `${rmsPct}%` }}
             />
             <div
-              className="absolute inset-y-0 w-0.5 bg-felt"
+              className="meter-gate"
               style={{ left: `${gatePct}%` }}
               title="Gate"
             />
@@ -116,7 +112,7 @@ export function SettingsScreen({ initial, onBack, onSave }: Props) {
         </section>
 
         <section className="space-y-4">
-          <h2 className="font-display text-2xl text-ivory">Microphone</h2>
+          <h2 className="page-title text-2xl">Microphone</h2>
           <p className="font-ui text-sm text-dust">
             These only affect Mic input. MIDI from the Kawai ignores them.
             Play a note while you move the sliders — the preview uses the draft
@@ -188,14 +184,14 @@ export function SettingsScreen({ initial, onBack, onSave }: Props) {
         <div className="flex flex-col gap-3">
           <button
             type="button"
-            className="min-h-16 bg-brass font-ui text-lg text-ink"
+            className="btn btn-primary btn-block min-h-16 text-lg"
             onClick={() => onSave(s)}
           >
             Save
           </button>
           <button
             type="button"
-            className="min-h-14 bg-shadow font-ui text-dust"
+            className="btn btn-secondary btn-block min-h-14"
             onClick={() => setS({ ...DEFAULT_MIC_SETTINGS })}
           >
             Reset to defaults

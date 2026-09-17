@@ -15,7 +15,7 @@ export function SelfReportButtons({
         <button
           type="button"
           onClick={onShow}
-          className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+          className="btn btn-secondary min-h-16 flex-1 text-lg"
         >
           Show me
         </button>
@@ -23,14 +23,14 @@ export function SelfReportButtons({
       <button
         type="button"
         onClick={onHit}
-        className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
+        className="btn btn-primary min-h-16 flex-1 text-lg font-medium"
       >
         Hit
       </button>
       <button
         type="button"
         onClick={onMiss}
-        className="min-h-16 flex-1 bg-felt font-ui text-lg font-medium text-ivory"
+        className="btn btn-danger min-h-16 flex-1 text-lg font-medium"
       >
         Miss
       </button>

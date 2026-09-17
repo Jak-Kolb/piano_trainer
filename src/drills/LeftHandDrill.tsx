@@ -144,14 +144,14 @@ export function LeftHandDrill({
             type="button"
             onClick={() => void onPlayIt()}
             disabled={playing}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
           >
             {playing ? 'Playing…' : 'Play it'}
           </button>
           <button
             type="button"
             onClick={() => setRevealed((r) => !r)}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
           >
             {revealed ? 'Hide keys' : 'Show keys'}
           </button>
@@ -170,7 +170,7 @@ export function LeftHandDrill({
             type="button"
             onClick={() => setKey(k)}
             className={`min-h-12 px-3 font-ui ${
-              key.label === k.label ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+              key.label === k.label ? 'btn btn-chip btn-chip-active' : 'btn btn-chip btn-chip-idle'
             }`}
           >
             {k.label}
@@ -184,7 +184,7 @@ export function LeftHandDrill({
             type="button"
             onClick={() => setPattern(p)}
             className={`min-h-12 px-3 font-ui ${
-              pattern.id === p.id ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+              pattern.id === p.id ? 'btn btn-chip btn-chip-active' : 'btn btn-chip btn-chip-idle'
             }`}
           >
             {p.name}

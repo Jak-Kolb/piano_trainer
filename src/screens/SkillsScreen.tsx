@@ -9,19 +9,15 @@ interface Props {
 
 export function SkillsScreen({ onBack, onSelect, midiStatus }: Props) {
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-ink">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-12 px-3 font-ui text-dust"
-        >
+    <div className="page-shell">
+      <div className="topbar">
+        <button type="button" onClick={onBack} className="btn btn-ghost">
           Home
         </button>
-        <p className="truncate font-ui text-xs text-dust">{midiStatus}</p>
+        <p className="topbar-status">{midiStatus}</p>
       </div>
-      <main className="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 px-6 pb-10">
-        <h1 className="font-display text-4xl text-ivory">Skills</h1>
+      <main className="page-main page-main--skills">
+        <h1 className="page-title page-title--section">Skills</h1>
         <ModulePicker onSelect={onSelect} />
       </main>
     </div>

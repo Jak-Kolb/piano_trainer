@@ -13,7 +13,9 @@ interface Props {
 export function ModeSelector({ mode, status, onChange }: Props) {
   return (
     <div className="w-full max-w-xl space-y-3">
-      <p className="font-ui text-sm text-dust">Input mode</p>
+      <p className="font-ui text-sm uppercase tracking-[0.14em] text-dust">
+        Input mode
+      </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {INPUT_MODE_OPTIONS.map((opt) => {
           const disabled = opt.id === 'midi' && !midiSupported()
@@ -24,12 +26,12 @@ export function ModeSelector({ mode, status, onChange }: Props) {
               type="button"
               disabled={disabled}
               onClick={() => onChange(opt.id)}
-              className={`min-h-16 px-3 py-3 text-left font-ui ${
+              className={`flex min-h-16 flex-col items-start rounded-[var(--radius-md)] border px-3 py-3 text-left font-ui transition ${
                 selected
-                  ? 'bg-brass text-ink'
+                  ? 'border-[rgba(224,176,86,0.55)] bg-gradient-to-b from-brass-bright to-brass text-ink shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_16px_rgba(192,150,63,0.28)]'
                   : disabled
-                    ? 'bg-shadow/50 text-dust/50'
-                    : 'bg-shadow text-ivory'
+                    ? 'border-panel-border bg-panel/50 text-dust/50'
+                    : 'border-panel-border bg-panel text-ivory hover:border-dust/45'
               }`}
             >
               <span className="block text-base font-medium">{opt.label}</span>

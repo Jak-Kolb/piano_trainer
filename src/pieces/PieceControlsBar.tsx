@@ -17,9 +17,11 @@ export function PieceControlsBar({
     onChange({ ...controls, ...patch })
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-dust/20 px-3 py-1 font-ui text-xs text-dust">
+    <div className="controls-bar">
       <label className="flex items-center gap-2">
-        <span className="whitespace-nowrap">{controls.tempoPercent}%</span>
+        <span className="whitespace-nowrap font-medium text-ivory">
+          {controls.tempoPercent}%
+        </span>
         <input
           type="range"
           min={40}
@@ -44,7 +46,7 @@ export function PieceControlsBar({
               ),
             })
           }
-          className="h-7 w-12 bg-shadow px-1 text-ivory"
+          className="field-input w-12"
         />
         –
         <input
@@ -60,9 +62,9 @@ export function PieceControlsBar({
               ),
             })
           }
-          className="h-7 w-12 bg-shadow px-1 text-ivory"
+          className="field-input w-12"
         />
-        <span className="text-dust/60">/{measureCount}</span>
+        <span className="text-dust-muted">/{measureCount}</span>
       </span>
       {hasTwoHands && (
         <span className="flex gap-1">
@@ -75,10 +77,8 @@ export function PieceControlsBar({
               key={id}
               type="button"
               onClick={() => set({ hands: id })}
-              className={`h-7 px-2 ${
-                controls.hands === id
-                  ? 'bg-brass text-ink'
-                  : 'bg-shadow text-dust'
+              className={`btn btn-chip ${
+                controls.hands === id ? 'btn-chip-active' : 'btn-chip-idle'
               }`}
             >
               {label}

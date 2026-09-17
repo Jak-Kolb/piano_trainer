@@ -12,10 +12,10 @@ export function ModulePicker({ onSelect }: Props) {
           key={m.id}
           type="button"
           onClick={() => onSelect(m.id)}
-          className="min-h-20 bg-shadow px-5 py-4 text-left text-ivory"
+          className="surface-card btn-module"
         >
-          <span className="font-display text-xl">{m.title}</span>
-          <span className="mt-1 block font-ui text-sm text-dust">{m.blurb}</span>
+          <span className="btn-module-title">{m.title}</span>
+          <span className="btn-module-blurb">{m.blurb}</span>
         </button>
       ))}
     </div>

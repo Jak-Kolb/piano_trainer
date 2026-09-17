@@ -160,7 +160,7 @@ export function InversionDrill({
             type="button"
             onClick={() => void onPlayIt()}
             disabled={playing}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
           >
             {playing ? 'Playing…' : 'Play it'}
           </button>
