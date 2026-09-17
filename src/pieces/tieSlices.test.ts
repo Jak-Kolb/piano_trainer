@@ -15,4 +15,14 @@ describe('sliceNotesForTies', () => {
     expect(slices[0]!.measure).toBe(1)
     expect(slices[1]!.measure).toBe(2)
   })
+
+  it('does not mid-bar split in 3/4 (only barlines)', () => {
+    // secPerQuarter=0.5 → bar=1.5s. Note spanning most of the bar stays one slice.
+    const n: PieceNote[] = [
+      { midi: 60, time: 0, duration: 1.4, track: 0, measure: 1, velocity: 0.7 },
+    ]
+    const slices = sliceNotesForTies(n, 0.5, 3)
+    expect(slices.length).toBe(1)
+    expect(slices[0]!.tieToNext).toBe(false)
+  })
 })

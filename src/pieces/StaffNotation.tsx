@@ -404,13 +404,18 @@ export function StaffNotation({
       const usable = width - marginLeft - 8
       const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
 
-      const onsetSlots = (inBarSlices: NoteSlice[], barStartT: number, spq: number): number => {
-        const set = new Set<number>()
+      /** Weight a bar by unique fresh onsets + extra chord notes (thickness). */
+      const barWeight = (inBarSlices: NoteSlice[], barStartT: number, spq: number): number => {
+        const onsetKeys = new Set<number>()
+        let freshSliceCount = 0
         for (const s of inBarSlices) {
           if (s.tieFromPrev) continue
-          set.add(Math.round(((s.time - barStartT) / spq) * 4) / 4)
+          freshSliceCount += 1
+          onsetKeys.add(Math.round(((s.time - barStartT) / spq) * 4) / 4)
         }
-        return set.size
+        const uniqueOnsets = onsetKeys.size
+        const extraNotes = Math.max(0, freshSliceCount - uniqueOnsets)
+        return Math.max(4, uniqueOnsets + extraNotes)
       }
 
       const barWidthsForSystem = (start: number): number[] => {
@@ -420,7 +425,7 @@ export function StaffNotation({
           if (barNum > measureCount) break
           const barStartT = barStartSec(barNum, secPerQuarter, bpb)
           const inBar = slicesInMeasure(slices, barNum)
-          weights.push(Math.max(3, onsetSlots(inBar, barStartT, Math.max(0.01, secPerQuarter))))
+          weights.push(barWeight(inBar, barStartT, Math.max(0.01, secPerQuarter)))
         }
         const sum = weights.reduce((a, b) => a + b, 0) || 1
         return weights.map((w) => (usable * w) / sum)
@@ -472,7 +477,8 @@ export function StaffNotation({
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
           const x = barX(bi)
-          const inner = Math.max(50, barWidths[bi]! - (bi === 0 ? 40 : 18))
+          // Floor formatter room so dense bars aren't given ~50px.
+          const inner = Math.max(80, barWidths[bi]! - (bi === 0 ? 40 : 18))
 
           const staves: { clef: 'treble' | 'bass'; stave: Stave; built: Built }[] =
             []
@@ -484,6 +490,8 @@ export function StaffNotation({
               if (keySignature && keySignature !== 'C') {
                 stave.addKeySignature(keySignature)
               }
+              // Measure number at the start of each staff line (printed-music style).
+              stave.setMeasure(start)
             }
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })

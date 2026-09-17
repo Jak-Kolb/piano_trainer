@@ -25,7 +25,7 @@ export function barStartSec(
 }
 
 /**
- * Split sustained MIDI notes at barlines (and mid-bar in 4/4) so the sheet
+ * Split sustained MIDI notes at barlines (and mid-bar in even meters) so the sheet
  * can draw ties instead of one blob that crosses the structure.
  */
 export function sliceNotesForTies(
@@ -47,9 +47,10 @@ export function sliceNotesForTies(
       const start = barStartSec(measure, secPerQuarter, beatsPerBar)
       const mid = start + midSec
       const nextBar = start + barSec
-      // Next structural split after t (mid-bar or barline)
+      // Next structural split after t (mid-bar in even meters, else barline).
+      // 3/4 has no half-bar convention — only cut at barlines to avoid clutter.
       let cut = nextBar
-      if (t < mid - 0.01 && end > mid + 0.01) cut = mid
+      if (beatsPerBar % 2 === 0 && t < mid - 0.01 && end > mid + 0.01) cut = mid
       const sliceEnd = Math.min(end, cut)
       const dur = sliceEnd - t
       if (dur > 0.02) {
