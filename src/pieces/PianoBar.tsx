@@ -39,7 +39,7 @@ function whiteBg(on: boolean, hand: PianoHand | null, isMiddle: boolean): string
   if (on && hand === 'left') return 'bg-[#C45C6A]' // LH rose
   if (on && hand === 'right') return 'bg-brass' // RH gold
   if (on) return 'bg-brass'
-  if (isMiddle) return 'bg-[#7EB6C9]'
+  if (isMiddle) return 'bg-[#C5C9D1]'
   return 'bg-ivory'
 }
 
@@ -120,7 +120,7 @@ export function PianoBar({
                   data-midi={m}
                   style={{ width: WHITE_W, height: WHITE_H }}
                   className={`relative flex shrink-0 flex-col justify-end border border-dust/40 pb-1 ${bg} ${
-                    isMiddle ? 'ring-2 ring-inset ring-[#3D7A8F]' : ''
+                    isMiddle ? 'ring-2 ring-inset ring-[#8B919C]' : ''
                   }`}
                   title={
                     isMiddle
@@ -179,7 +179,7 @@ export function PianoBar({
           LH
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#7EB6C9]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#C5C9D1]" />
           Middle C
         </span>
         <span>· scroll if needed</span>
