@@ -132,7 +132,7 @@ export function PianoBar({
                   {(on || isMiddle) && (
                     <span
                       className={`piano-key-label ${
-                        on || isMiddle ? 'text-ink' : 'text-ink/80'
+                        on || isMiddle ? 'text-on-accent' : 'text-on-accent/80'
                       }`}
                     >
                       {midiNoteLabel(m)}
