@@ -52,13 +52,7 @@ export function TriadRecall({
   useEffect(() => {
     let cancelled = false
     void mediansForDraw().then((m) => {
-      if (cancelled) return
-      setPersistedMedians(m)
-      setPrompt((current) =>
-        Object.keys(m).length === 0
-          ? current
-          : drawPrompt(DEFAULT_QUALITIES, m, current.id),
-      )
+      if (!cancelled) setPersistedMedians(m)
     })
     return () => {
       cancelled = true

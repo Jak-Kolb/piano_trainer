@@ -1,20 +1,44 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   loadProgress,
   saveProgress,
   streakCount,
   type ProgressState,
 } from '../storage/progress'
+import {
+  formatChordId,
+  loadTriadStats,
+  slowestChords,
+  type TriadHistoryPoint,
+} from '../storage/triadStats'
 import { DrillFrame } from './DrillFrame'
 
 export function ProgressView({ onExit }: { onExit: () => void }) {
   const [p, setP] = useState<ProgressState>(() => loadProgress())
   const [pieceName, setPieceName] = useState('')
+  const [history, setHistory] = useState<TriadHistoryPoint[]>([])
+  const [weak, setWeak] = useState<
+    { id: string; medianMs: number; hits: number; misses: number }[]
+  >([])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadTriadStats().then((state) => {
+      if (cancelled) return
+      setHistory(state.history)
+      setWeak(slowestChords(state, 5))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const update = (next: ProgressState) => {
     setP(next)
     saveProgress(next)
   }
+
+  const recentHistory = history.slice(-14)
 
   return (
     <DrillFrame title="Progress" onExit={onExit}>
@@ -29,6 +53,46 @@ export function ProgressView({ onExit }: { onExit: () => void }) {
           label="Triad hits / misses"
           value={`${p.triadHits} / ${p.triadMisses}`}
         />
+
+        <div>
+          <p className="font-ui text-sm text-dust">Triad median time (recent)</p>
+          {recentHistory.length === 0 ? (
+            <p className="mt-2 font-ui text-ivory">No triad data yet</p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {recentHistory.map((h) => (
+                <li
+                  key={h.day}
+                  className="flex justify-between border-b border-dust/30 py-2 font-ui text-ivory"
+                >
+                  <span>{h.day}</span>
+                  <span className="text-dust">
+                    {Math.round(h.medianMs)} ms · {Math.round(h.hitRate * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <p className="font-ui text-sm text-dust">Slowest triads</p>
+          {weak.length === 0 ? (
+            <p className="mt-2 font-ui text-ivory">Practice triads to populate</p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {weak.map((c) => (
+                <li
+                  key={c.id}
+                  className="flex justify-between border-b border-dust/30 py-2 font-ui text-ivory"
+                >
+                  <span>{formatChordId(c.id)}</span>
+                  <span className="text-dust">{Math.round(c.medianMs)} ms</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <label className="block font-ui text-sm text-dust">
           External assessment score
