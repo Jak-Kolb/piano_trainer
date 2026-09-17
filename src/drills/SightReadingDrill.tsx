@@ -1,9 +1,25 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { InputSource } from '../input'
-import { loadProgress, markPracticeToday, saveProgress } from '../storage/progress'
+import { PianoBar } from '../pieces/PianoBar'
+import {
+  loadProgress,
+  markPracticeToday,
+  saveProgress,
+} from '../storage/progress'
 import { DrillFrame } from './DrillFrame'
+import { drillActiveKeys } from './drillMidi'
 
 const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const
+/** C position RH midis (C4–B4). */
+const STEP_MIDI: Record<(typeof STEPS)[number], number> = {
+  C: 60,
+  D: 62,
+  E: 64,
+  F: 65,
+  G: 67,
+  A: 69,
+  B: 71,
+}
 
 function hashBars(notes: string[]): string {
   return notes.join('|')
@@ -39,17 +55,46 @@ export function SightReadingDrill({
   const [phase, setPhase] = useState<'preview' | 'run' | 'done'>('preview')
   const [previewLeft, setPreviewLeft] = useState(30)
   const [notes, setNotes] = useState(() => generateLevel1(seen.current))
+  const [step, setStep] = useState(0)
   const [beatsLost, setBeatsLost] = useState(0)
+  const [heldMidi, setHeldMidi] = useState<number[]>([])
   const timerRef = useRef<number | null>(null)
+  const advanced = useRef(false)
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  const stepRef = useRef(step)
+  stepRef.current = step
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+
+  const midis = useMemo(
+    () => notes.map((n) => STEP_MIDI[n as (typeof STEPS)[number]] ?? 60),
+    [notes],
+  )
+  const currentMidi = phase === 'run' ? midis[step] : undefined
+
+  const activeKeys = useMemo(() => {
+    const targets = currentMidi != null ? [currentMidi] : midis
+    return drillActiveKeys(heldMidi, phase === 'preview' ? midis : targets, 'right')
+  }, [heldMidi, midis, currentMidi, phase])
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
 
   const startPreview = () => {
     setPhase('preview')
     setPreviewLeft(30)
-    if (timerRef.current) window.clearInterval(timerRef.current)
+    setStep(0)
+    advanced.current = false
+    clearTimer()
     timerRef.current = window.setInterval(() => {
       setPreviewLeft((t) => {
         if (t <= 1) {
-          if (timerRef.current) window.clearInterval(timerRef.current)
+          clearTimer()
           setPhase('run')
           return 0
         }
@@ -59,12 +104,38 @@ export function SightReadingDrill({
   }
 
   const finish = (lost: number) => {
+    clearTimer()
     setBeatsLost(lost)
     setPhase('done')
     const p = markPracticeToday(loadProgress())
     p.sightReadingCount += 1
     saveProgress(p)
   }
+
+  useEffect(() => () => clearTimer(), [])
+
+  useEffect(() => {
+    advanced.current = false
+  }, [step])
+
+  useEffect(() => {
+    return input.onChange(() => {
+      const held = input.getHeldMidiNotes()
+      setHeldMidi(held)
+      if (phaseRef.current !== 'run') return
+      if (advanced.current) return
+      if (input.id !== 'midi') return
+      const want = midis[stepRef.current]
+      if (want == null) return
+      if (!held.includes(want)) return
+      advanced.current = true
+      if (stepRef.current >= notesRef.current.length - 1) {
+        finish(0)
+      } else {
+        setStep((s) => s + 1)
+      }
+    })
+  }, [input, midis])
 
   if (phase === 'done') {
     return (
@@ -92,9 +163,13 @@ export function SightReadingDrill({
       status={
         phase === 'preview'
           ? `Preview ${previewLeft}s`
-          : 'Play through — no pause'
+          : `Note ${step + 1}/${notes.length} · no pause`
       }
+      round={phase === 'run' ? `${step + 1} / ${notes.length}` : undefined}
       onExit={onExit}
+      keyboard={
+        <PianoBar activeKeys={activeKeys} lowMidi={48} highMidi={84} />
+      }
       footer={
         phase === 'run' ? (
           <>
@@ -119,17 +194,27 @@ export function SightReadingDrill({
             className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
             onClick={startPreview}
           >
-            {previewLeft === 30 && phase === 'preview' ? 'Start preview' : '…'}
+            {previewLeft === 30 && phase === 'preview'
+              ? 'Start preview'
+              : 'Preview running…'}
           </button>
         )
       }
     >
-      <p className="mb-4 font-ui text-dust">Level 1 · RH · C position</p>
+      <p className="mb-4 font-ui text-dust">
+        Level 1 · RH · C position · MIDI advances note-by-note (octave-exact)
+      </p>
       <div className="flex flex-wrap justify-center gap-3">
         {notes.map((n, i) => (
           <span
             key={`${n}-${i}`}
-            className="flex h-20 w-16 items-center justify-center bg-shadow font-display text-3xl text-ivory"
+            className={`flex h-24 w-20 items-center justify-center font-display text-4xl ${
+              phase === 'run' && i === step
+                ? 'bg-brass text-ink'
+                : phase === 'run' && i < step
+                  ? 'bg-brass/40 text-ivory'
+                  : 'bg-shadow text-ivory'
+            }`}
           >
             {n}
           </span>

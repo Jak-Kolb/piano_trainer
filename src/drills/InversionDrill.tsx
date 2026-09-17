@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
+import { PianoBar } from '../pieces/PianoBar'
+import { preloadPiano } from '../pieces/pianoPlayer'
 import {
   CHROMATIC_ROOTS,
   chordSymbol,
@@ -13,6 +14,7 @@ import {
   type TriadQuality,
 } from '../theory'
 import { DrillFrame } from './DrillFrame'
+import { drillActiveKeys, notesToMidi, playChordDemo } from './drillMidi'
 import { SelfReportButtons } from './SelfReportButtons'
 
 const INVERSIONS: { inv: Inversion; label: string }[] = [
@@ -52,21 +54,42 @@ export function InversionDrill({
   const [prompt, setPrompt] = useState(draw)
   const [revealed, setRevealed] = useState(false)
   const [streak, setStreak] = useState(0)
+  const [hits, setHits] = useState(0)
+  const [tries, setTries] = useState(0)
   const [flash, setFlash] = useState<'hit' | 'miss' | null>(null)
   const [heard, setHeard] = useState('')
+  const [heldMidi, setHeldMidi] = useState<number[]>([])
+  const [playing, setPlaying] = useState(false)
   const gradingLock = useRef(false)
+  const stopDemo = useRef<(() => void) | null>(null)
   const promptRef = useRef(prompt)
   promptRef.current = prompt
+  const revealedRef = useRef(revealed)
+  revealedRef.current = revealed
 
   const title = useMemo(
     () => `${prompt.symbol} · ${prompt.invLabel}`,
     [prompt],
   )
 
+  const targetMidi = useMemo(() => notesToMidi(prompt.notes, 4), [prompt.notes])
+
+  const activeKeys = useMemo(() => {
+    const targets = revealed || flash !== null ? targetMidi : []
+    return drillActiveKeys(heldMidi, targets, 'right')
+  }, [heldMidi, targetMidi, revealed, flash])
+
   const autoMidi = input.id === 'midi' && input.supportsAutomaticGrade()
+
+  useEffect(() => {
+    preloadPiano()
+    return () => stopDemo.current?.()
+  }, [])
 
   const next = (hit: boolean) => {
     setStreak((s) => (hit ? s + 1 : 0))
+    setHits((h) => h + (hit ? 1 : 0))
+    setTries((t) => t + 1)
     setFlash(hit ? 'hit' : 'miss')
     setRevealed(true)
     window.setTimeout(() => {
@@ -77,10 +100,24 @@ export function InversionDrill({
     }, 900)
   }
 
+  const onPlayIt = async () => {
+    if (playing) return
+    stopDemo.current?.()
+    setPlaying(true)
+    try {
+      const { stop } = await playChordDemo(promptRef.current.notes, 4)
+      stopDemo.current = stop
+      window.setTimeout(() => setPlaying(false), 1600)
+    } catch {
+      setPlaying(false)
+    }
+  }
+
   useEffect(() => {
     return input.onChange(() => {
       const held = input.getHeldMidiNotes()
       const pcs = input.getHeldPitchClasses()
+      setHeldMidi(held)
       setHeard(
         held.length
           ? `Hearing ${held.length} note${held.length === 1 ? '' : 's'}`
@@ -88,25 +125,26 @@ export function InversionDrill({
       )
       if (!autoMidi) return
       if (gradingLock.current) return
+      if (revealedRef.current) return
       if (held.length === 0) return
       const p = promptRef.current
       if (inversionVoicingCorrect(held, p.notes, p.bass)) {
         gradingLock.current = true
         next(true)
-      } else if (
-        // Wrong bass but full chord pcs — soft miss signal only when they release? 
-        // Don't auto-miss; wait for correct or Show me / Miss.
-        pcs.length >= 3
-      ) {
-        // leave for self-report / keep holding until bass is correct
+      } else if (pcs.length >= 3) {
+        // Wrong bass / voicing — wait for correct or Show me / Miss
       }
     })
   }, [autoMidi, input])
+
+  const accuracy =
+    tries === 0 ? undefined : `${Math.round((hits / tries) * 100)}%`
 
   return (
     <DrillFrame
       status={heard || input.getStatus()}
       streak={streak}
+      accuracy={accuracy}
       onExit={onExit}
       banner={
         flash === 'hit' ? (
@@ -115,41 +153,52 @@ export function InversionDrill({
           <p className="bg-felt px-4 py-2 text-center font-ui text-ivory">Miss</p>
         ) : undefined
       }
+      keyboard={<PianoBar activeKeys={activeKeys} lowMidi={48} highMidi={84} />}
       footer={
-        autoMidi && !revealed ? (
-          <p className="w-full text-center font-ui text-dust">
-            Play the inversion — bass must be{' '}
-            <span className="text-ivory">{formatNoteName(prompt.bass)}</span>
-          </p>
-        ) : revealed ? (
-          <SelfReportButtons
-            showOnlyGrade
-            onHit={() => {
-              if (gradingLock.current) return
-              gradingLock.current = true
-              next(true)
-            }}
-            onMiss={() => {
-              if (gradingLock.current) return
-              gradingLock.current = true
-              next(false)
-            }}
-          />
-        ) : (
-          <SelfReportButtons
-            onShow={() => setRevealed(true)}
-            onHit={() => {
-              if (gradingLock.current) return
-              gradingLock.current = true
-              next(true)
-            }}
-            onMiss={() => {
-              if (gradingLock.current) return
-              gradingLock.current = true
-              next(false)
-            }}
-          />
-        )
+        <>
+          <button
+            type="button"
+            onClick={() => void onPlayIt()}
+            disabled={playing}
+            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+          >
+            {playing ? 'Playing…' : 'Play it'}
+          </button>
+          {autoMidi && !revealed ? (
+            <p className="w-full text-center font-ui text-dust">
+              Play the inversion — bass must be{' '}
+              <span className="text-ivory">{formatNoteName(prompt.bass)}</span>
+            </p>
+          ) : revealed ? (
+            <SelfReportButtons
+              showOnlyGrade
+              onHit={() => {
+                if (gradingLock.current) return
+                gradingLock.current = true
+                next(true)
+              }}
+              onMiss={() => {
+                if (gradingLock.current) return
+                gradingLock.current = true
+                next(false)
+              }}
+            />
+          ) : (
+            <SelfReportButtons
+              onShow={() => setRevealed(true)}
+              onHit={() => {
+                if (gradingLock.current) return
+                gradingLock.current = true
+                next(true)
+              }}
+              onMiss={() => {
+                if (gradingLock.current) return
+                gradingLock.current = true
+                next(false)
+              }}
+            />
+          )}
+        </>
       }
     >
       <p
@@ -162,13 +211,10 @@ export function InversionDrill({
         Exact inversion — lowest note is {formatNoteName(prompt.bass)}
       </p>
       {(revealed || flash === 'miss') && (
-        <div className="mt-6">
-          <p className="mb-2 text-center font-ui text-ivory">
-            Bass {formatNoteName(prompt.bass)} · pcs{' '}
-            {prompt.notes.map((n) => formatNoteName(n)).join(' ')}
-          </p>
-          <KeyboardDiagram highlight={prompt.notes} active={prompt.bass} />
-        </div>
+        <p className="mt-3 text-center font-ui text-ivory">
+          Bass {formatNoteName(prompt.bass)} ·{' '}
+          {prompt.notes.map((n) => formatNoteName(n)).join(' ')}
+        </p>
       )}
     </DrillFrame>
   )
