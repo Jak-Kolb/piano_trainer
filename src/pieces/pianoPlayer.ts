@@ -50,6 +50,9 @@ const NOTE_NAMES = [
   'B',
 ] as const
 
+/** Keep voices free on long pieces (line/bar rarely hit this). */
+const MAX_VOICE_SEC = 1.6
+
 export function midiToNoteName(midi: number): string {
   const name = NOTE_NAMES[((midi % 12) + 12) % 12]!
   const oct = Math.floor(midi / 12) - 1
@@ -58,18 +61,21 @@ export function midiToNoteName(midi: number): string {
 
 let sampler: Tone.Sampler | null = null
 let loadPromise: Promise<Tone.Sampler> | null = null
+let limiter: Tone.Limiter | null = null
 
 async function getSampler(): Promise<Tone.Sampler> {
   if (sampler) return sampler
   if (!loadPromise) {
     loadPromise = (async () => {
       await Tone.start()
+      // Soft ceiling so dense song passages don't crackle
+      limiter = new Tone.Limiter(-3).toDestination()
       const s = new Tone.Sampler({
         urls: SALAMANDER_URLS,
         baseUrl: 'https://tonejs.github.io/audio/salamander/',
-        release: 1,
-        volume: -6,
-      }).toDestination()
+        release: 0.85,
+        volume: -8,
+      }).connect(limiter)
       await Tone.loaded()
       sampler = s
       return s
@@ -77,6 +83,8 @@ async function getSampler(): Promise<Tone.Sampler> {
   }
   return loadPromise
 }
+
+type PartEv = { note: string; dur: number; vel: number }
 
 /** Schedule piano notes; returns stop(). Times are piece seconds. */
 export async function playPianoNotes(
@@ -91,21 +99,58 @@ export async function playPianoNotes(
   const s = await getSampler()
   await Tone.start()
 
+  // Clear any prior song schedule so Play song can re-run cleanly
+  Tone.Transport.stop()
+  Tone.Transport.cancel(0)
+  Tone.Transport.seconds = 0
+  s.releaseAll()
+
   const tempoFactor = Math.max(0.25, tempoPercent / 100)
-  const originSec = notes[0]?.time ?? 0
+  const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
+  const originSec = sorted[0]?.time ?? 0
   const endSec =
-    notes.reduce((m, n) => Math.max(m, n.time + n.duration), originSec) + 0.15
-  const startedAt = performance.now()
-  const now = Tone.now() + 0.05
+    sorted.reduce((m, n) => Math.max(m, n.time + n.duration), originSec) + 0.15
 
-  for (const n of notes) {
-    const when = now + (n.time - originSec) / tempoFactor
-    const dur = Math.max(0.08, n.duration / tempoFactor)
-    s.triggerAttackRelease(midiToNoteName(n.midi), dur, when, 0.7)
-  }
+  const events: Array<{ time: number } & PartEv> = sorted.map((n) => {
+    const t = (n.time - originSec) / tempoFactor
+    const dur = Math.min(
+      MAX_VOICE_SEC,
+      Math.max(0.08, n.duration / tempoFactor),
+    )
+    return {
+      time: t,
+      note: midiToNoteName(n.midi),
+      dur,
+      vel: 0.62,
+    }
+  })
 
+  // Tone.Part is the same voice engine as one-shot triggers, but cancels cleanly
+  // and doesn't dump thousands of raw AudioParam events in one sync loop.
+  const part = new Tone.Part((time, ev: PartEv) => {
+    s.triggerAttackRelease(ev.note, ev.dur, time, ev.vel)
+  }, events)
+  part.start(0)
+
+  // Keep UI playhead aligned with audible attacks
+  const leadSec = 0.06
+  Tone.Transport.start(Tone.now() + leadSec)
+  const startedAt = performance.now() + leadSec * 1000
+
+  let stopped = false
   const stop = () => {
+    if (stopped) return
+    stopped = true
+    try {
+      part.stop()
+      part.dispose()
+    } catch {
+      /* already disposed */
+    }
     s.releaseAll()
+    Tone.Transport.stop()
+    Tone.Transport.cancel(0)
+    Tone.Transport.seconds = 0
   }
 
   return { stop, originSec, endSec, startedAt }

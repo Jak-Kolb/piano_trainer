@@ -290,22 +290,37 @@ export function WalkThroughMode({
   useEffect(() => {
     if (!demo || !demoMeta.current) return
     let raf = 0
+    let lastUiBucket = -1
+    let lastOnset = -1
     const tick = () => {
       const meta = demoMeta.current
       if (!meta) return
       const elapsed =
         ((performance.now() - meta.startedAt) / 1000) * meta.tempoFactor
       const t = meta.originSec + elapsed
-      setDemoNow(t)
       if (t >= meta.endSec) {
         stopDemo()
         return
+      }
+      // Don't rebuild the whole staff 60fps during Play song — only when the
+      // sounding step changes, or ~12fps for line glide smoothness.
+      let onset = lastOnset
+      for (let i = 0; i < steps.length; i++) {
+        const o = steps[i]![0]?.time ?? -1
+        if (o <= t + 0.02) onset = o
+        else break
+      }
+      const bucket = Math.floor(t * 12)
+      if (onset !== lastOnset || bucket !== lastUiBucket) {
+        lastOnset = onset
+        lastUiBucket = bucket
+        setDemoNow(t)
       }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [demo])
+  }, [demo, steps])
 
   const done =
     !demo &&
