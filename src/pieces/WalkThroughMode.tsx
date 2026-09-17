@@ -11,7 +11,7 @@ import { StaffNotation } from './StaffNotation'
 import type { ParsedPiece, PieceControls, PieceNote } from './types'
 
 type ViewMode = 'staff' | 'roll' | 'both'
-type DemoKind = 'line' | 'bar' | 'selection' | null
+type DemoKind = 'line' | 'bar' | 'selection' | 'song' | null
 
 interface Props {
   parsed: ParsedPiece
@@ -266,10 +266,20 @@ export function WalkThroughMode({
     }
   }
 
-  const startDemo = async (kind: 'line' | 'bar' | 'selection') => {
+  const startDemo = async (
+    kind: 'line' | 'bar' | 'selection' | 'song',
+  ) => {
     if (kind === 'selection') {
       if (selLo == null || selHi == null) return
       await startDemoRange(selLo, selHi, 'selection')
+      return
+    }
+    if (kind === 'song') {
+      await startDemoRange(
+        controls.loopStartMeasure,
+        controls.loopEndMeasure,
+        'song',
+      )
       return
     }
     const lo = kind === 'bar' ? displayMeasure : lineStart
@@ -312,7 +322,9 @@ export function WalkThroughMode({
         ? 'bar'
         : demo === 'selection'
           ? 'selection'
-          : null
+          : demo === 'song'
+            ? 'song'
+            : null
 
   return (
     <div className="flex h-full flex-col bg-ink">
@@ -372,6 +384,13 @@ export function WalkThroughMode({
           </button>
         ) : (
           <>
+            <button
+              type="button"
+              onClick={() => void startDemo('song')}
+              className="h-7 bg-brass px-3 text-sm font-ui text-ink"
+            >
+              Play song
+            </button>
             <button
               type="button"
               onClick={() => void startDemo('line')}
