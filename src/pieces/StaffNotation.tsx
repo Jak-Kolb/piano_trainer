@@ -20,7 +20,7 @@ import {
 } from './tieSlices'
 import type { PieceNote } from './types'
 import { writtenAccidental } from './keySig'
-import { meanVelocity, velocityToDynamic } from './dynamics'
+import { dynamicMarksForPiece } from './dynamics'
 import {
   durationToVex,
   midiToVexKey,
@@ -146,8 +146,8 @@ function buildVoiceNotes(
   activeNotes: PieceNote[],
   measure: number,
   keySignature: string,
-  /** Last dynamic label drawn on this clef (mutated when a new mark is placed). */
-  dynState: { last: string | null },
+  /** Piece-level dynamic marks to place on this clef (bass only, usually). */
+  marksInBar: { time: number; label: string }[],
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -207,17 +207,20 @@ function buildVoiceNotes(
     // Dot modifier is visual only; timing comes from "qd" duration above
     if (dur.dots > 0) Dot.buildAndAttach([sn], { all: true })
 
-    // Dynamics (mp / mf / …) when this clef's loudness band changes
+    // Piece-level dynamic mark (once at change) — attach to nearest onset
     const fresh = g.filter((s) => !s.tieFromPrev)
-    if (fresh.length) {
-      const label = velocityToDynamic(meanVelocity(fresh))
-      if (label !== dynState.last) {
-        dynState.last = label
-        const ann = new Annotation(label)
+    if (fresh.length && marksInBar.length) {
+      const onset = fresh[0]!.time
+      const hit = marksInBar.find((m) => Math.abs(m.time - onset) <= 0.08)
+      if (hit) {
+        const ann = new Annotation(hit.label)
         ann.setFont('Times New Roman', 13, 'italic')
-        ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM)
+        ann.setVerticalJustification(Annotation.VerticalJustify.TOP)
         ann.setStyle({ fillStyle: '#C4B8A0', strokeStyle: '#C4B8A0' })
         sn.addModifier(ann, 0)
+        // consume so we don't stamp the same mark on another chord
+        const ix = marksInBar.indexOf(hit)
+        if (ix >= 0) marksInBar.splice(ix, 1)
       }
     }
 
@@ -322,6 +325,8 @@ export function StaffNotation({
         hands ? n.track === hands.lh : n.midi < 60
 
       const slices = sliceNotesForTies(notes, secPerQuarter)
+      // One mark per real dynamic change in the piece (not per staff line)
+      const pieceDynMarks = dynamicMarksForPiece(notes)
 
       const barStart = barStartSec(measure, secPerQuarter)
       const barDur = 4 * Math.max(0.01, secPerQuarter)
@@ -414,10 +419,6 @@ export function StaffNotation({
           fi: number
           li: number
         }[] = []
-        // Reset each system so the opening dynamic is visible on every line
-        const dynTreble = { last: null as string | null }
-        const dynBass = { last: null as string | null }
-
         // Draw each bar as a grand-staff unit: format treble+bass together
         // so the same beat lines up vertically across clefs.
         bars.forEach((barNum, bi) => {
@@ -447,7 +448,7 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
-              dynTreble,
+              [], // piano dynamics sit above the bass staff, not duplicated on treble
             )
             staves.push({ clef: 'treble', stave, built })
           }
@@ -471,7 +472,9 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
-              dynBass,
+              pieceDynMarks
+                .filter((m) => m.measure === barNum)
+                .map((m) => ({ time: m.time, label: m.label })),
             )
             staves.push({ clef: 'bass', stave, built })
           }
