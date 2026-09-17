@@ -9,6 +9,8 @@ export interface PieceNote {
   /** MIDI track index from the file (used to separate LH/RH when ≥2 tracks). */
   track: number
   measure: number
+  /** Note-on velocity 0–1 from the MIDI file (dynamics). */
+  velocity: number
 }
 
 export interface StoredPiece {

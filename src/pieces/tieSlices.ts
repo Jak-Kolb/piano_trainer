@@ -13,6 +13,7 @@ export interface NoteSlice {
   tieToNext: boolean
   /** Original MIDI note onset (for active-step matching). */
   sourceTime: number
+  velocity: number
 }
 
 export function barStartSec(
@@ -62,6 +63,7 @@ export function sliceNotesForTies(
           tieFromPrev: t > n.time + 0.02,
           tieToNext: sliceEnd < end - 0.02,
           sourceTime: n.time,
+          velocity: n.velocity,
         })
       }
       t = sliceEnd

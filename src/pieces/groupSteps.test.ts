@@ -3,7 +3,7 @@ import { groupSteps } from './parseMidi'
 import type { PieceNote } from './types'
 
 function n(midi: number, time: number, track = 0): PieceNote {
-  return { midi, time, duration: 0.25, track, measure: 1 }
+  return { midi, time, duration: 0.25, track, measure: 1, velocity: 0.7 }
 }
 
 describe('groupSteps', () => {
