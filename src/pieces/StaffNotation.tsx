@@ -173,6 +173,10 @@ function buildVoiceNotes(
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
       strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
     })
+    sn.setLedgerLineStyle({
+      strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
+      lineWidth: 2.5,
+    })
     notes.push(sn)
     sliceGroups.push(g)
     cursor = Math.max(cursor, start + dur.beats)
@@ -267,7 +271,7 @@ export function StaffNotation({
       renderer.resize(width, height)
       const ctx = renderer.getContext()
       ctx.setFillStyle('#EDE4D3')
-      ctx.setStrokeStyle('#5C6478')
+      ctx.setStrokeStyle('#B8C0D0')
 
       const marginLeft = 8
       const usable = width - marginLeft - 8
@@ -331,7 +335,7 @@ export function StaffNotation({
               }
             }
             stave.setEndBarType(Barline.type.SINGLE)
-            stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
+            stave.setStyle({ fillStyle: '#C5CDD8', strokeStyle: '#C5CDD8', lineWidth: 1.75 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
             const built = buildVoiceNotes(
@@ -354,7 +358,7 @@ export function StaffNotation({
               }
             }
             stave.setEndBarType(Barline.type.SINGLE)
-            stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
+            stave.setStyle({ fillStyle: '#C5CDD8', strokeStyle: '#C5CDD8', lineWidth: 1.75 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
             const built = buildVoiceNotes(
