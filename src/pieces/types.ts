@@ -33,6 +33,8 @@ export interface ParsedPiece {
   secPerQuarter: number
   /** VexFlow key name, e.g. "G" or "Em". Defaults to "C". */
   keySignature: string
+  /** Time-signature numerator (beats per bar), e.g. 4 in 4/4. */
+  beatsPerBar: number
 }
 
 export interface PieceControls {

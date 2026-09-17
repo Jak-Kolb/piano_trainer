@@ -26,7 +26,8 @@ import {
   type VexDuration,
 } from './midiToVex'
 
-export const BARS_PER_SYSTEM = 8
+/** @deprecated Prefer barsPerSystem(beatsPerBar) — kept for callers. */
+export const BARS_PER_SYSTEM = 6
 const STAVE_H = 95
 const SYSTEM_GAP = 18
 
@@ -40,6 +41,8 @@ interface Props {
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
   /** VexFlow key, e.g. "G" or "Em". */
   keySignature?: string
+  /** Bars drawn per staff line (from time signature). */
+  barsPerLine?: number
 }
 
 function groupSlices(pool: NoteSlice[], windowSec = 0.12): NoteSlice[][] {
@@ -206,6 +209,7 @@ export function StaffNotation({
   selection,
   onMeasurePointer,
   keySignature = 'C',
+  barsPerLine = 6,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -214,6 +218,8 @@ export function StaffNotation({
     marginLeft: number
     barW: number
   } | null>(null)
+
+  const BPS = Math.max(3, barsPerLine)
 
   useEffect(() => {
     const el = host.current
@@ -232,18 +238,18 @@ export function StaffNotation({
       const slices = sliceNotesForTies(notes, secPerQuarter)
 
       const lineStart =
-        Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) *
-          BARS_PER_SYSTEM +
+        Math.floor((Math.max(1, measure) - 1) / BPS) *
+          BPS +
         1
       const systemStarts = [lineStart]
-      if (lineStart + BARS_PER_SYSTEM <= measureCount) {
-        systemStarts.push(lineStart + BARS_PER_SYSTEM)
+      if (lineStart + BPS <= measureCount) {
+        systemStarts.push(lineStart + BPS)
       }
 
       const windowNotes = notes.filter(
         (n) =>
           n.measure >= lineStart &&
-          n.measure < lineStart + BARS_PER_SYSTEM * 2,
+          n.measure < lineStart + BPS * 2,
       )
       const hasTreble =
         windowNotes.some(isTrebleNote) || windowNotes.length === 0
@@ -265,7 +271,7 @@ export function StaffNotation({
 
       const marginLeft = 8
       const usable = width - marginLeft - 8
-      const barW = usable / BARS_PER_SYSTEM
+      const barW = usable / BPS
       const systemsMeta: { start: number; top: number; bottom: number }[] = []
 
       type TieKey = string
@@ -276,7 +282,7 @@ export function StaffNotation({
 
       const drawSystem = (start: number, y0: number) => {
         const bars = Array.from(
-          { length: BARS_PER_SYSTEM },
+          { length: BPS },
           (_, i) => start + i,
         )
         systemsMeta.push({ start, top: y0, bottom: y0 + systemH })
@@ -447,13 +453,13 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection, keySignature])
+  }, [notes, measure, activeNotes, secPerQuarter, measureCount, selection, keySignature, BPS])
 
   const lineStart =
-    Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) * BARS_PER_SYSTEM +
+    Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
     1
-  const lineEnd = lineStart + BARS_PER_SYSTEM - 1
-  const nextStart = lineStart + BARS_PER_SYSTEM
+  const lineEnd = lineStart + BPS - 1
+  const nextStart = lineStart + BPS
   const hasNext = nextStart <= measureCount
 
   const handleClick = (e: MouseEvent) => {
@@ -463,10 +469,10 @@ export function StaffNotation({
     const rect = box.getBoundingClientRect()
     const x = e.clientX - rect.left - lay.marginLeft
     const y = e.clientY - rect.top
-    if (x < 0 || x > lay.barW * BARS_PER_SYSTEM) return
+    if (x < 0 || x > lay.barW * BPS) return
     const sys = lay.systems.find((s) => y >= s.top && y < s.bottom)
     if (!sys) return
-    const bi = Math.min(BARS_PER_SYSTEM - 1, Math.floor(x / lay.barW))
+    const bi = Math.min(BPS - 1, Math.floor(x / lay.barW))
     const bar = sys.start + bi
     if (bar < 1 || bar > measureCount) return
     onMeasurePointer(bar, e.shiftKey)
@@ -488,7 +494,7 @@ export function StaffNotation({
       <div ref={host} className="w-full" />
       <p className="pb-1 text-center font-ui text-xs text-dust">
         Bars {lineStart}–{lineEnd}
-        {hasNext ? ` + next ${nextStart}–${Math.min(measureCount, nextStart + BARS_PER_SYSTEM - 1)}` : ''}
+        {hasNext ? ` + next ${nextStart}–${Math.min(measureCount, nextStart + BPS - 1)}` : ''}
         {' · '}playing {measure}
         {selLabel ?? ''}
         {' · '}

@@ -69,6 +69,7 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
     ppq: midi.header.ppq,
     secPerQuarter,
     keySignature,
+    beatsPerBar,
   }
 }
 

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { InputSource } from '../input'
-import { playNotesDemo, lineStartMeasure } from './demoAudio'
+import { barsPerSystem, playNotesDemo, lineStartMeasure } from './demoAudio'
 import { preloadPiano } from './pianoPlayer'
 import { midiChordHeld, midiNames } from './noteMatch'
 import { chordWindowSec, filterNotes, groupSteps } from './parseMidi'
 import { PianoBar } from './PianoBar'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
-import { BARS_PER_SYSTEM, StaffNotation } from './StaffNotation'
+import { StaffNotation } from './StaffNotation'
 import type { ParsedPiece, PieceControls, PieceNote } from './types'
 
 type ViewMode = 'staff' | 'roll' | 'both'
@@ -65,8 +65,9 @@ export function WalkThroughMode({
 
   const step = steps[stepIdx]
   const measure = step?.[0]?.measure ?? controls.loopStartMeasure
-  const lineStart = lineStartMeasure(measure, BARS_PER_SYSTEM)
-  const lineEnd = lineStart + BARS_PER_SYSTEM - 1
+  const barsPerLine = barsPerSystem(parsed.beatsPerBar)
+  const lineStart = lineStartMeasure(measure, barsPerLine)
+  const lineEnd = lineStart + barsPerLine - 1
   const maxMeasure = Math.max(controls.loopEndMeasure, parsed.measureCount)
 
   const activeNotes: PieceNote[] = useMemo(() => {
@@ -365,6 +366,7 @@ export function WalkThroughMode({
               selection={selection}
               onMeasurePointer={onMeasurePointer}
               keySignature={parsed.keySignature}
+              barsPerLine={barsPerLine}
             />
           )}
           {(view === 'staff' || view === 'both') && (
