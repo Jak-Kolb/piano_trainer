@@ -16,19 +16,15 @@ export function SettingsScreen({
 }: Props) {
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-ink">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-12 px-3 font-ui text-dust"
-        >
+      <div className="topbar">
+        <button type="button" onClick={onBack} className="btn btn-ghost">
           Home
         </button>
-        <h1 className="font-display text-xl text-ivory">Settings</h1>
+        <h1 className="page-title">Settings</h1>
         <span className="w-16" />
       </div>
 
-      <main className="mx-auto w-full max-w-lg space-y-8 px-6 pb-12">
+      <main className="page-main page-main--settings space-y-8">
         <section className="space-y-3">
           <h2 className="font-display text-lg text-ivory">Color profile</h2>
           <p className="font-ui text-sm text-dust">
@@ -42,10 +38,8 @@ export function SettingsScreen({
                   key={p.id}
                   type="button"
                   onClick={() => onColorProfile(p.id)}
-                  className={`rounded border px-3 py-3 text-left transition ${
-                    selected
-                      ? 'border-brass bg-shadow'
-                      : 'border-dust/40 bg-shadow/60'
+                  className={`surface-card px-3 py-3 text-left ${
+                    selected ? 'ring-2 ring-brass' : ''
                   }`}
                 >
                   <div className="mb-2 flex gap-1">

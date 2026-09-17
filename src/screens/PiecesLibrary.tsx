@@ -38,24 +38,20 @@ export function PiecesLibrary({ onBack, onOpen, midiStatus }: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-ink">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-12 px-3 font-ui text-dust"
-        >
+    <div className="page-shell">
+      <div className="topbar">
+        <button type="button" onClick={onBack} className="btn btn-ghost">
           Home
         </button>
-        <p className="truncate font-ui text-xs text-dust">{midiStatus}</p>
+        <p className="topbar-status">{midiStatus}</p>
       </div>
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 pb-10">
-        <h1 className="font-display text-4xl text-ivory">Pieces</h1>
+      <main className="page-main page-main--pieces">
+        <h1 className="page-title page-title--section">Pieces</h1>
         <button
           type="button"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="min-h-16 bg-brass font-ui text-lg font-medium text-ink"
+          className="btn btn-primary btn-block min-h-16 text-lg"
         >
           {busy ? 'Importing…' : 'Import MIDI'}
         </button>
@@ -67,9 +63,9 @@ export function PiecesLibrary({ onBack, onOpen, midiStatus }: Props) {
           onChange={(e) => void onImport(e.target.files?.[0])}
         />
         {error && <p className="font-ui text-sm text-felt">{error}</p>}
-        <ul className="space-y-2">
+        <ul className="space-y-3">
           {pieces.length === 0 && (
-            <li className="font-ui text-dust">
+            <li className="surface-panel px-4 py-5 font-ui text-dust">
               No pieces yet — import a .mid file.
             </li>
           )}
@@ -78,7 +74,7 @@ export function PiecesLibrary({ onBack, onOpen, midiStatus }: Props) {
               <button
                 type="button"
                 onClick={() => onOpen(p.id)}
-                className="min-h-20 flex-1 bg-shadow px-4 py-3 text-left"
+                className="surface-card min-h-20 flex-1 px-4 py-3 text-left"
               >
                 <span className="font-display text-xl text-ivory">{p.name}</span>
                 <span className="mt-1 block font-ui text-sm text-dust">
@@ -88,10 +84,8 @@ export function PiecesLibrary({ onBack, onOpen, midiStatus }: Props) {
               </button>
               <button
                 type="button"
-                className="min-h-20 px-3 font-ui text-dust"
-                onClick={() =>
-                  void deletePiece(p.id).then(reload)
-                }
+                className="btn btn-ghost min-h-20 px-3"
+                onClick={() => void deletePiece(p.id).then(reload)}
               >
                 Delete
               </button>

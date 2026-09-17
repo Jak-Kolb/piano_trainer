@@ -213,7 +213,7 @@ export function TriadRecall({ input, onExit }: Props) {
     const slowest = [...attempts].sort((a, b) => b.ms - a.ms).slice(0, 3)
 
     return (
-      <div className="flex h-full flex-col bg-ink">
+      <div className="flex h-full flex-col bg-transparent">
         <TopBar
           streak={streak}
           onExit={onExit}
@@ -241,7 +241,7 @@ export function TriadRecall({ input, onExit }: Props) {
           <button
             type="button"
             onClick={onExit}
-            className="mt-4 min-h-16 min-w-[12rem] bg-brass px-8 font-ui text-lg font-medium text-ink"
+            className="btn btn-primary mt-4 min-h-16 min-w-[12rem] px-8 text-lg font-medium"
           >
             Done
           </button>
@@ -253,7 +253,7 @@ export function TriadRecall({ input, onExit }: Props) {
   return (
     <div
       className={`flex h-full flex-col duration-100 ${
-        flash === 'hit' ? 'bg-brass' : flash === 'miss' ? 'bg-felt' : 'bg-ink'
+        flash === 'hit' ? 'bg-brass' : flash === 'miss' ? 'bg-felt' : 'bg-transparent'
       }`}
     >
       <TopBar
@@ -282,7 +282,7 @@ export function TriadRecall({ input, onExit }: Props) {
               type="button"
               onClick={() => void onPlayIt()}
               disabled={playing}
-              className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+              className="btn btn-secondary min-h-16 flex-1 text-lg"
             >
               {playing ? 'Playing…' : 'Play it'}
             </button>
@@ -291,14 +291,14 @@ export function TriadRecall({ input, onExit }: Props) {
                 <button
                   type="button"
                   onClick={showAnswer}
-                  className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+                  className="btn btn-secondary min-h-16 flex-1 text-lg"
                 >
                   Show me
                 </button>
                 <button
                   type="button"
                   onClick={() => grade(true)}
-                  className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
+                  className="btn btn-primary min-h-16 flex-1 text-lg font-medium"
                 >
                   Hit
                 </button>
@@ -325,14 +325,14 @@ export function TriadRecall({ input, onExit }: Props) {
               type="button"
               onClick={() => void onPlayIt()}
               disabled={playing}
-              className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+              className="btn btn-secondary min-h-16 flex-1 text-lg"
             >
               {playing ? 'Playing…' : 'Play it'}
             </button>
             <button
               type="button"
               onClick={() => grade(true)}
-              className="min-h-16 flex-1 bg-brass font-ui text-lg font-medium text-ink"
+              className="btn btn-primary min-h-16 flex-1 text-lg font-medium"
             >
               Hit
             </button>
@@ -350,7 +350,7 @@ export function TriadRecall({ input, onExit }: Props) {
             type="button"
             onClick={() => void onPlayIt()}
             disabled={playing}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
           >
             {playing ? 'Playing…' : 'Play it'}
           </button>

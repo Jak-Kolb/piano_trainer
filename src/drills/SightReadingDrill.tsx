@@ -145,7 +145,7 @@ export function SightReadingDrill({
         <p className="mt-2 font-ui text-dust">No replay — next exercise is new.</p>
         <button
           type="button"
-          className="mt-8 min-h-16 bg-brass px-8 font-ui text-lg text-ink"
+          className="mt-8 btn btn-primary min-h-16 px-8 text-lg"
           onClick={() => {
             setNotes(generateLevel1(seen.current))
             setBeatsLost(0)
@@ -175,7 +175,7 @@ export function SightReadingDrill({
           <>
             <button
               type="button"
-              className="min-h-16 flex-1 bg-brass font-ui text-lg text-ink"
+              className="btn btn-primary min-h-16 flex-1 text-lg"
               onClick={() => finish(0)}
             >
               Finished clean
@@ -191,7 +191,7 @@ export function SightReadingDrill({
         ) : (
           <button
             type="button"
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
             onClick={startPreview}
           >
             {previewLeft === 30 && phase === 'preview'

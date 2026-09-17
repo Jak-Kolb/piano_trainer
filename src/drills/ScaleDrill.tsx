@@ -196,7 +196,7 @@ export function ScaleDrill({
         </p>
         <button
           type="button"
-          className="mt-8 min-h-16 bg-brass px-8 font-ui text-lg text-ink"
+          className="mt-8 btn btn-primary min-h-16 px-8 text-lg"
           onClick={restart}
         >
           Again
@@ -230,7 +230,7 @@ export function ScaleDrill({
             type="button"
             onClick={() => void onPlayIt()}
             disabled={playing}
-            className="min-h-16 flex-1 bg-shadow font-ui text-lg text-ivory disabled:opacity-60"
+            className="btn btn-secondary min-h-16 flex-1 text-lg"
           >
             {playing ? 'Playing…' : 'Play it'}
           </button>
@@ -255,7 +255,7 @@ export function ScaleDrill({
             type="button"
             onClick={() => setKey(k)}
             className={`min-h-12 px-3 font-ui ${
-              key === k ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+              key === k ? 'btn btn-chip btn-chip-active' : 'btn btn-chip btn-chip-idle'
             }`}
           >
             {k.replace(' major', '')}
@@ -269,7 +269,7 @@ export function ScaleDrill({
             type="button"
             onClick={() => setHand(h)}
             className={`min-h-12 px-4 font-ui ${
-              hand === h ? 'bg-brass text-ink' : 'bg-shadow text-dust'
+              hand === h ? 'btn btn-chip btn-chip-active' : 'btn btn-chip btn-chip-idle'
             }`}
           >
             {h === 'right' ? 'RH' : 'LH'}
@@ -292,7 +292,7 @@ export function ScaleDrill({
           <span
             key={`${i}-${formatPitch(n)}`}
             className={`flex min-h-16 min-w-14 flex-col items-center justify-center px-2 font-display ${
-              i === step ? 'bg-brass text-ink' : 'bg-shadow text-ivory'
+              i === step ? 'rounded-[var(--radius-md)] bg-brass text-ink' : 'surface-panel text-ivory'
             }`}
           >
             <span className="text-lg">{formatPitch(n)}</span>

@@ -35,18 +35,23 @@ function handFor(
   return byMidi.get(midi) ?? null
 }
 
-function whiteBg(on: boolean, hand: PianoHand | null): string {
-  if (on && hand === 'left') return 'bg-[#C45C6A]' // LH rose
-  if (on && hand === 'right') return 'bg-brass' // RH gold
-  if (on) return 'bg-brass'
-  return 'bg-white'
+function whiteClass(
+  on: boolean,
+  hand: PianoHand | null,
+  isMiddle: boolean,
+): string {
+  if (on && hand === 'left') return 'piano-key-white piano-key-white--on-lh'
+  if (on && hand === 'right') return 'piano-key-white piano-key-white--on-rh'
+  if (on) return 'piano-key-white piano-key-white--on'
+  if (isMiddle) return 'piano-key-white piano-key-white--middle'
+  return 'piano-key-white'
 }
 
-function blackBg(on: boolean, hand: PianoHand | null): string {
-  if (on && hand === 'left') return 'bg-[#8B3A48]'
-  if (on && hand === 'right') return 'bg-felt'
-  if (on) return 'bg-felt'
-  return 'bg-[#1a1f2e]'
+function blackClass(on: boolean, hand: PianoHand | null): string {
+  if (on && hand === 'left') return 'piano-key-black piano-key-black--on-lh'
+  if (on && hand === 'right') return 'piano-key-black piano-key-black--on-rh'
+  if (on) return 'piano-key-black piano-key-black--on'
+  return 'piano-key-black'
 }
 
 export function PianoBar({
@@ -96,7 +101,7 @@ export function PianoBar({
   }, [activeMidis.join(',')])
 
   return (
-    <div className="w-full shrink-0 border-t border-dust/20 bg-ink px-2 py-2">
+    <div className="piano-chrome">
       <div
         ref={scroller}
         className="w-full overflow-x-auto overflow-y-hidden"
@@ -111,16 +116,13 @@ export function PianoBar({
               const hand = handFor(m, byMidi)
               const on = hand != null
               const isMiddle = m === MIDDLE_C
-              const bg = whiteBg(on, hand)
               return (
                 <div
                   key={m}
                   ref={isMiddle ? middleRef : undefined}
                   data-midi={m}
                   style={{ width: WHITE_W, height: WHITE_H }}
-                  className={`relative flex shrink-0 flex-col justify-end border border-dust/40 pb-1 ${bg} ${
-                    isMiddle ? 'ring-2 ring-inset ring-[#8B919C]' : ''
-                  }`}
+                  className={whiteClass(on, hand, isMiddle)}
                   title={
                     isMiddle
                       ? 'Middle C (C4)'
@@ -129,8 +131,8 @@ export function PianoBar({
                 >
                   {(on || isMiddle) && (
                     <span
-                      className={`block text-center font-ui text-[10px] font-semibold leading-none ${
-                        on ? 'text-black' : 'text-black/80'
+                      className={`piano-key-label ${
+                        on || isMiddle ? 'text-ink' : 'text-ink/80'
                       }`}
                     >
                       {midiNoteLabel(m)}
@@ -152,13 +154,11 @@ export function PianoBar({
                   key={m}
                   data-midi={m}
                   style={{ left, width: BLACK_W, height: BLACK_H }}
-                  className={`absolute top-0 flex flex-col justify-end rounded-b pb-1 ${blackBg(on, hand)} ${
-                    on ? 'ring-1 ring-ivory/40' : ''
-                  }`}
+                  className={blackClass(on, hand)}
                   title={`${midiNoteLabel(m)}${hand === 'right' ? ' · RH' : hand === 'left' ? ' · LH' : ''}`}
                 >
                   {on && (
-                    <span className="block text-center font-ui text-[8px] font-semibold leading-none text-ivory">
+                    <span className="piano-key-label text-ivory">
                       {midiNoteLabel(m)}
                     </span>
                   )}
@@ -168,20 +168,20 @@ export function PianoBar({
           </div>
         </div>
       </div>
-      <p className="flex flex-wrap items-center justify-center gap-3 pt-1 font-ui text-[10px] text-dust">
+      <p className="piano-chrome-legend">
         <span>
           <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-brass" />
           RH
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#C45C6A]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-lh" />
           LH
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm border border-dust bg-white" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-middle-c" />
           Middle C
         </span>
-        <span>· scroll if needed</span>
+        <span className="normal-case tracking-normal">· scroll if needed</span>
       </p>
     </div>
   )

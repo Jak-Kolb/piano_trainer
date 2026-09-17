@@ -21,20 +21,24 @@ export function KeyboardDiagram({ highlight, active, hideLabels }: Props) {
 
   return (
     <div className="flex w-full max-w-lg flex-col items-center gap-3">
-      <div className="relative flex h-32 w-full max-w-md justify-center">
+      <div className="kb-diagram">
         {WHITE.map((pc) => {
           const isActive = activePc === pc
           const isHi = pcs.has(pc)
           return (
             <div
               key={`w-${pc}`}
-              className={`relative mx-px h-full flex-1 rounded-b border border-dust/40 ${
-                isActive ? 'bg-brass' : isHi ? 'bg-brass/40' : 'bg-ivory'
+              className={`kb-diagram-white ${
+                isActive
+                  ? 'kb-diagram-white--active'
+                  : isHi
+                    ? 'kb-diagram-white--hi'
+                    : ''
               }`}
             />
           )
         })}
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0 px-[0.4rem] pt-[0.35rem]">
           {BLACK.map((pc, i) => {
             const isActive = activePc === pc
             const isHi = pcs.has(pc)
@@ -46,8 +50,12 @@ export function KeyboardDiagram({ highlight, active, hideLabels }: Props) {
                   position: 'absolute',
                   transform: 'translateX(-50%)',
                 }}
-                className={`h-20 w-[7%] rounded-b ${
-                  isActive ? 'bg-felt' : isHi ? 'bg-felt/70' : 'bg-shadow'
+                className={`kb-diagram-black ${
+                  isActive
+                    ? 'kb-diagram-black--active'
+                    : isHi
+                      ? 'kb-diagram-black--hi'
+                      : ''
                 }`}
               />
             )
