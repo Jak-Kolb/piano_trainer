@@ -39,6 +39,8 @@ interface Props {
   measureCount: number
   selection: { start: number; end: number } | null
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
+  /** +1 next measure, -1 previous — from wheel/trackpad on the sheet. */
+  onMeasureScroll?: (dir: 1 | -1) => void
   /** VexFlow key, e.g. "G" or "Em". */
   keySignature?: string
   /** Bars drawn per staff line (from time signature). */
@@ -215,6 +217,7 @@ export function StaffNotation({
   measureCount,
   selection,
   onMeasurePointer,
+  onMeasureScroll,
   keySignature = 'C',
   barsPerLine = 6,
 }: Props) {
@@ -225,8 +228,34 @@ export function StaffNotation({
     marginLeft: number
     barW: number
   } | null>(null)
+  const scrollAccum = useRef(0)
+  const onMeasureScrollRef = useRef(onMeasureScroll)
+  onMeasureScrollRef.current = onMeasureScroll
 
   const BPS = Math.max(3, barsPerLine)
+
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      const cb = onMeasureScrollRef.current
+      if (!cb) return
+      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return
+      e.preventDefault()
+      scrollAccum.current += e.deltaY
+      const step = 40
+      while (scrollAccum.current >= step) {
+        scrollAccum.current -= step
+        cb(1)
+      }
+      while (scrollAccum.current <= -step) {
+        scrollAccum.current += step
+        cb(-1)
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   useEffect(() => {
     const el = host.current
@@ -496,7 +525,7 @@ export function StaffNotation({
       ref={wrap}
       className="w-full cursor-pointer rounded bg-shadow px-2 py-1"
       onClick={handleClick}
-      title="Click a bar to jump · Shift-click to select a range"
+      title="Click a bar to jump · Shift-click to select · Scroll to move measures"
     >
       <div ref={host} className="w-full" />
       <p className="pb-1 text-center font-ui text-xs text-dust">
@@ -506,7 +535,7 @@ export function StaffNotation({
         {selLabel ?? ''}
         {' · '}
         {resolveHands(notes) ? 'tracks→hands' : 'pitch→clef'} · click /
-        shift-click
+        shift-click · scroll
       </p>
     </div>
   )

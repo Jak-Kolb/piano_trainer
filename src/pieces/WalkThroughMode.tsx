@@ -180,6 +180,16 @@ export function WalkThroughMode({
     jumpToMeasure(displayMeasure)
   }
 
+  const jumpPrevMeasure = () => {
+    const lo = controls.loopStartMeasure
+    jumpToMeasure(Math.max(lo, displayMeasure - 1))
+  }
+
+  const jumpNextMeasure = () => {
+    const hi = Math.min(controls.loopEndMeasure, maxMeasure)
+    jumpToMeasure(Math.min(hi, displayMeasure + 1))
+  }
+
   const onMeasurePointer = (bar: number, shiftKey: boolean) => {
     if (shiftKey) {
       if (selectAnchor.current == null) {
@@ -379,6 +389,11 @@ export function WalkThroughMode({
               measureCount={maxMeasure}
               selection={selection}
               onMeasurePointer={onMeasurePointer}
+              onMeasureScroll={(dir: 1 | -1) => {
+                if (demo) return
+                if (dir > 0) jumpNextMeasure()
+                else jumpPrevMeasure()
+              }}
               keySignature={parsed.keySignature}
               barsPerLine={barsPerLine}
             />
@@ -433,11 +448,22 @@ export function WalkThroughMode({
           </button>
           <button
             type="button"
-            disabled={!!demo}
+            disabled={!!demo || displayMeasure <= controls.loopStartMeasure}
             className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
-            onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
+            onClick={jumpPrevMeasure}
           >
             Back
+          </button>
+          <button
+            type="button"
+            disabled={
+              !!demo ||
+              displayMeasure >= Math.min(controls.loopEndMeasure, maxMeasure)
+            }
+            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
+            onClick={jumpNextMeasure}
+          >
+            Next
           </button>
           <button
             type="button"
