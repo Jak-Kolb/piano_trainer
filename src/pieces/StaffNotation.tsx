@@ -2,6 +2,7 @@ import { useEffect, useRef, type MouseEvent } from 'react'
 import {
   Accidental,
   Barline,
+  Dot,
   Formatter,
   Renderer,
   Stave,
@@ -21,7 +22,7 @@ import {
   durationToVex,
   midiToVexKey,
   restDurationsForBeats,
-  vexDurationBeats,
+  type VexDuration,
 } from './midiToVex'
 
 export const BARS_PER_SYSTEM = 8
@@ -72,6 +73,28 @@ function isActiveGroup(g: NoteSlice[], activeNotes: PieceNote[]): boolean {
   return true
 }
 
+
+function applyDots(sn: StaveNote, dots: number, keyCount: number) {
+  if (dots <= 0) return
+  for (let k = 0; k < keyCount; k++) {
+    for (let d = 0; d < dots; d++) {
+      sn.addModifier(new Dot(), k)
+    }
+  }
+}
+
+function makeRest(clef: 'treble' | 'bass', dur: VexDuration): StaveNote {
+  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
+  const rest = new StaveNote({
+    keys: [restKey],
+    duration: `${dur.key}r`,
+    clef,
+  })
+  applyDots(rest, dur.dots, 1)
+  rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
+  return rest
+}
+
 type Built = {
   notes: StaveNote[]
   /** For each StaveNote, the slices that built it (same order as keys). */
@@ -84,15 +107,8 @@ function pushRests(
   notes: StaveNote[],
   sliceGroups: NoteSlice[][],
 ) {
-  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
   for (const rd of restDurationsForBeats(beats)) {
-    const rest = new StaveNote({
-      keys: [restKey],
-      duration: `${rd}r`,
-      clef,
-    })
-    rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
-    notes.push(rest)
+    notes.push(makeRest(clef, rd))
     sliceGroups.push([])
   }
 }
@@ -111,7 +127,6 @@ function buildVoiceNotes(
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
   const sliceGroups: NoteSlice[][] = []
-  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
   const spq = Math.max(0.01, secPerQuarter)
   const barStart = barStartSec(measure, spq)
   const barBeats = 4
@@ -131,23 +146,14 @@ function buildVoiceNotes(
       cursor += gap
     }
 
-    // Don't let this note's written duration overrun the next onset
-    const rawBeats =
-      Math.max(...g.map((s) => s.duration)) / spq
-    let noteBeats = vexDurationBeats(durationToVex(rawBeats * spq, spq))
-    // Snap note start to cursor if slightly early (overlap / rounding)
+    const rawBeats = Math.max(...g.map((s) => s.duration)) / spq
     const start = Math.max(cursor, Math.min(onset, barBeats))
-    const room = barBeats - start
-    if (noteBeats > room && room > 0) {
-      // shrink to what fits in the bar visually
-      noteBeats = vexDurationBeats(
-        durationToVex(room * spq, spq),
-      )
-    }
-    const dur = durationToVex(noteBeats * spq, spq)
+    const room = Math.max(0, barBeats - start)
+    const capped = room > 0 ? Math.min(rawBeats, room) : rawBeats
+    const dur = durationToVex(capped * spq, spq)
 
     const keys = g.map((s) => midiToVexKey(s.midi))
-    const sn = new StaveNote({ keys, duration: dur, clef })
+    const sn = new StaveNote({ keys, duration: dur.key, clef })
     keys.forEach((k, i) => {
       const pitch = k.split('/')[0]!
       if (g[i]?.tieFromPrev) return
@@ -156,6 +162,7 @@ function buildVoiceNotes(
       else if (pitch.length > 1 && pitch.endsWith('b'))
         sn.addModifier(new Accidental('b'), i)
     })
+    applyDots(sn, dur.dots, keys.length)
     const isActive = isActiveGroup(g, activeNotes)
     sn.setStyle({
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
@@ -163,7 +170,7 @@ function buildVoiceNotes(
     })
     notes.push(sn)
     sliceGroups.push(g)
-    cursor = Math.max(cursor, start + vexDurationBeats(dur))
+    cursor = Math.max(cursor, start + dur.beats)
   }
 
   if (cursor < barBeats - 0.2) {
@@ -171,13 +178,7 @@ function buildVoiceNotes(
   }
 
   if (!notes.length) {
-    const rest = new StaveNote({
-      keys: [restKey],
-      duration: 'wr',
-      clef,
-    })
-    rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
-    notes.push(rest)
+    notes.push(makeRest(clef, { key: 'w', dots: 0, beats: 4 }))
     sliceGroups.push([])
   }
 
