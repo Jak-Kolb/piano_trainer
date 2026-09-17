@@ -1,4 +1,4 @@
-import type { PieceNote } from './types'
+import type { MeasureInfo, PieceNote } from './types'
 
 export interface NoteSlice {
   /** Stable id for the underlying MIDI note (for tie pairing). */
@@ -16,6 +16,41 @@ export interface NoteSlice {
   velocity: number
 }
 
+/** Uniform timeline helper for tests / fallbacks (constant tempo + meter). */
+export function uniformMeasures(
+  count: number,
+  secPerQuarter: number,
+  beatsPerBar = 4,
+): MeasureInfo[] {
+  const barSec = Math.max(0.01, beatsPerBar * secPerQuarter)
+  return Array.from({ length: Math.max(1, count) }, (_, i) => ({
+    startSec: i * barSec,
+    durationSec: barSec,
+    beatsPerBar,
+  }))
+}
+
+export function measureInfoAt(
+  measures: MeasureInfo[],
+  measure: number,
+): MeasureInfo {
+  const idx = Math.max(1, measure) - 1
+  const hit = measures[idx]
+  if (hit) return hit
+  // Extend past the array with the last known bar length (or a 4/4 default).
+  const last = measures[measures.length - 1]
+  if (last) {
+    const delta = idx - (measures.length - 1)
+    return {
+      startSec: last.startSec + delta * last.durationSec,
+      durationSec: last.durationSec,
+      beatsPerBar: last.beatsPerBar,
+    }
+  }
+  return { startSec: idx * 2, durationSec: 2, beatsPerBar: 4 }
+}
+
+/** @deprecated Prefer measureInfoAt(measures, m).startSec — constant-tempo only. */
 export function barStartSec(
   measure: number,
   secPerQuarter: number,
@@ -25,16 +60,13 @@ export function barStartSec(
 }
 
 /**
- * Split sustained MIDI notes at barlines (and mid-bar in even meters) so the sheet
- * can draw ties instead of one blob that crosses the structure.
+ * Split sustained MIDI notes at real barlines (and mid-bar in even meters) so
+ * the sheet can draw ties instead of one blob that crosses the structure.
  */
 export function sliceNotesForTies(
   notes: PieceNote[],
-  secPerQuarter: number,
-  beatsPerBar = 4,
+  measures: MeasureInfo[],
 ): NoteSlice[] {
-  const barSec = beatsPerBar * secPerQuarter
-  const midSec = (beatsPerBar / 2) * secPerQuarter
   const out: NoteSlice[] = []
 
   for (const n of notes) {
@@ -44,13 +76,20 @@ export function sliceNotesForTies(
     let measure = n.measure
 
     while (t < end - 0.02) {
-      const start = barStartSec(measure, secPerQuarter, beatsPerBar)
-      const mid = start + midSec
-      const nextBar = start + barSec
+      const info = measureInfoAt(measures, measure)
+      const start = info.startSec
+      const nextBar = start + info.durationSec
+      const mid = start + info.durationSec / 2
       // Next structural split after t (mid-bar in even meters, else barline).
       // 3/4 has no half-bar convention — only cut at barlines to avoid clutter.
       let cut = nextBar
-      if (beatsPerBar % 2 === 0 && t < mid - 0.01 && end > mid + 0.01) cut = mid
+      if (
+        info.beatsPerBar % 2 === 0 &&
+        t < mid - 0.01 &&
+        end > mid + 0.01
+      ) {
+        cut = mid
+      }
       const sliceEnd = Math.min(end, cut)
       const dur = sliceEnd - t
       if (dur > 0.02) {

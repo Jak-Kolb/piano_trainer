@@ -13,12 +13,12 @@ import {
 } from 'vexflow'
 import { resolveHands } from './parseMidi'
 import {
-  barStartSec,
+  measureInfoAt,
   sliceNotesForTies,
   slicesInMeasure,
   type NoteSlice,
 } from './tieSlices'
-import type { PieceNote } from './types'
+import type { MeasureInfo, PieceNote } from './types'
 import { writtenAccidental } from './keySig'
 import { dynamicMarksForPiece } from './dynamics'
 import {
@@ -81,8 +81,13 @@ interface Props {
   keySignature?: string
   /** Bars drawn per staff line (from time signature). */
   barsPerLine?: number
-  /** Beats per bar from the piece time signature (default 4). */
+  /** Beats per bar from the piece time signature (default 4) — first bar. */
   beatsPerBar?: number
+  /**
+   * Per-measure absolute timeline (index 0 = measure 1). Required for correct
+   * layout after tempo / time-signature changes.
+   */
+  measures: MeasureInfo[]
   /** Light notes on dark paper, or dark notes on light paper. */
   polarity?: SheetPolarity
 }
@@ -168,19 +173,18 @@ type Built = {
 function buildVoiceNotes(
   inBar: NoteSlice[],
   clef: 'treble' | 'bass',
-  secPerQuarter: number,
   activeNotes: PieceNote[],
-  measure: number,
+  measureInfo: MeasureInfo,
   keySignature: string,
   colors: ReturnType<typeof sheetColorsForPolarity>,
-  beatsPerBar: number,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
   const sliceGroups: NoteSlice[][] = []
-  const spq = Math.max(0.01, secPerQuarter)
-  const barBeats = Math.max(1, beatsPerBar)
-  const barStart = barStartSec(measure, spq, barBeats)
+  const barBeats = Math.max(1, measureInfo.beatsPerBar)
+  // Local SPQ for this bar — critical when tempo changed since the first bar.
+  const spq = Math.max(0.01, measureInfo.durationSec / barBeats)
+  const barStart = measureInfo.startSec
   let cursor = 0 // beats from start of bar (must match Σ glyph beats)
 
   const emitRests = (beats: number) => {
@@ -272,7 +276,7 @@ export function StaffNotation({
   notes,
   measure,
   activeNotes,
-  secPerQuarter,
+  secPerQuarter: _secPerQuarter,
   measureCount,
   selection,
   onMeasurePointer,
@@ -280,7 +284,8 @@ export function StaffNotation({
   nowSec,
   keySignature = 'C',
   barsPerLine = 6,
-  beatsPerBar = 4,
+  beatsPerBar: _beatsPerBar = 4,
+  measures,
   polarity = 'light-on-dark',
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
@@ -302,6 +307,7 @@ export function StaffNotation({
   }, [])
 
   const BPS = Math.max(3, barsPerLine)
+  void _secPerQuarter
 
   useEffect(() => {
     const el = wrap.current
@@ -340,14 +346,15 @@ export function StaffNotation({
       const isBassNote = (n: { track: number; midi: number }) =>
         hands ? n.track === hands.lh : n.midi < 60
 
-      const bpb = Math.max(1, Math.round(beatsPerBar) || 4)
+      void _beatsPerBar
 
-      const slices = sliceNotesForTies(notes, secPerQuarter, bpb)
+      const slices = sliceNotesForTies(notes, measures)
       // One mark per real dynamic change in the piece (not per staff line)
       const pieceDynMarks = dynamicMarksForPiece(notes)
 
-      const barStart = barStartSec(measure, secPerQuarter, bpb)
-      const barDur = bpb * Math.max(0.01, secPerQuarter)
+      const playInfo = measureInfoAt(measures, measure)
+      const barStart = playInfo.startSec
+      const barDur = Math.max(0.01, playInfo.durationSec)
       const tPlay =
         nowSec ??
         activeNotes[0]?.time ??
@@ -479,15 +486,14 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
+            const barInfo = measureInfoAt(measures, barNum)
             const built = buildVoiceNotes(
               inBar,
               'treble',
-              secPerQuarter,
               activeNotes,
-              barNum,
+              barInfo,
               keySignature,
               colors,
-              bpb,
             )
             staves.push({ clef: 'treble', stave, built })
           }
@@ -504,23 +510,23 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
+            const barInfo = measureInfoAt(measures, barNum)
             const built = buildVoiceNotes(
               inBar,
               'bass',
-              secPerQuarter,
               activeNotes,
-              barNum,
+              barInfo,
               keySignature,
               colors,
-              bpb,
             )
             staves.push({ clef: 'bass', stave, built })
           }
 
+          const barBeats = Math.max(1, measureInfoAt(measures, barNum).beatsPerBar)
           const voices: Voice[] = []
           for (const row of staves) {
             const voice = new Voice({
-              num_beats: bpb,
+              num_beats: barBeats,
               beat_value: 4,
             }).setStrict(false)
             voice.addTickables(row.built.notes)
@@ -531,7 +537,7 @@ export function StaffNotation({
             // Beam consecutive 8ths/16ths/… within each beat group (VexFlow
             // defaults for the bar's time signature). Create before format so
             // flags are suppressed; draw after voices so beams sit on top.
-            const timeSig = `${bpb}/4`
+            const timeSig = `${barBeats}/4`
             const beamGroups = Beam.getDefaultBeamGroups(timeSig)
             const beams: Beam[] = []
             for (const voice of voices) {
@@ -651,7 +657,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, beatsPerBar, themeEpoch, polarity])
+  }, [notes, measure, activeNotes, nowSec, measureCount, selection, keySignature, BPS, measures, themeEpoch, polarity])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
