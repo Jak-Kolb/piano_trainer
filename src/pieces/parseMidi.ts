@@ -54,6 +54,27 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
   }
 }
 
+
+/** Map two busiest tracks to RH/LH by mean pitch (higher = right hand). */
+export function resolveHands(
+  notes: PieceNote[],
+): { rh: number; lh: number } | null {
+  const counts = new Map<number, { sum: number; n: number }>()
+  for (const note of notes) {
+    const c = counts.get(note.track) ?? { sum: 0, n: 0 }
+    c.sum += note.midi
+    c.n += 1
+    counts.set(note.track, c)
+  }
+  const ranked = [...counts.entries()]
+    .map(([track, c]) => ({ track, mean: c.sum / c.n, n: c.n }))
+    .sort((a, b) => b.n - a.n)
+  if (ranked.length < 2) return null
+  const top = ranked.slice(0, 2)
+  top.sort((a, b) => b.mean - a.mean)
+  return { rh: top[0]!.track, lh: top[1]!.track }
+}
+
 export function filterNotes(
   notes: PieceNote[],
   hands: 'both' | 'right' | 'left',
@@ -65,11 +86,11 @@ export function filterNotes(
     (n) => n.measure >= loopStart && n.measure <= loopEnd,
   )
   if (!hasTwoHands || hands === 'both') return inLoop
-  const tracks = [...new Set(inLoop.map((n) => n.track))].sort((a, b) => a - b)
-  if (tracks.length < 2) return inLoop
-  const rh = tracks[0]!
-  const lh = tracks[tracks.length - 1]!
-  return inLoop.filter((n) => (hands === 'right' ? n.track === rh : n.track === lh))
+  const pair = resolveHands(inLoop)
+  if (!pair) return inLoop
+  return inLoop.filter((n) =>
+    hands === 'right' ? n.track === pair.rh : n.track === pair.lh,
+  )
 }
 
 /**

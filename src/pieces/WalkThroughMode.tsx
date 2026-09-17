@@ -4,6 +4,7 @@ import { playNotesDemo, lineStartMeasure } from './demoAudio'
 import { preloadPiano } from './pianoPlayer'
 import { midiChordHeld, midiNames } from './noteMatch'
 import { chordWindowSec, filterNotes, groupSteps } from './parseMidi'
+import { PianoBar } from './PianoBar'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
 import { BARS_PER_SYSTEM, StaffNotation } from './StaffNotation'
@@ -287,7 +288,7 @@ export function WalkThroughMode({
             key={id}
             type="button"
             onClick={() => setView(id)}
-            className={`min-h-9 px-3 text-sm font-ui ${
+            className={`h-7 px-3 text-sm font-ui ${
               view === id ? 'bg-brass text-ink' : 'bg-shadow text-dust'
             }`}
           >
@@ -299,7 +300,7 @@ export function WalkThroughMode({
           <button
             type="button"
             onClick={stopDemo}
-            className="min-h-9 bg-felt px-3 text-sm font-ui text-ivory"
+            className="h-7 bg-felt px-3 text-sm font-ui text-ivory"
           >
             Stop
           </button>
@@ -307,7 +308,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled
-            className="min-h-9 bg-shadow px-3 text-sm font-ui text-dust"
+            className="h-7 bg-shadow px-3 text-sm font-ui text-dust"
           >
             Loading…
           </button>
@@ -316,14 +317,14 @@ export function WalkThroughMode({
             <button
               type="button"
               onClick={() => void startDemo('line')}
-              className="min-h-9 bg-shadow px-3 text-sm font-ui text-ivory"
+              className="h-7 bg-shadow px-3 text-sm font-ui text-ivory"
             >
               Play line
             </button>
             <button
               type="button"
               onClick={() => void startDemo('bar')}
-              className="min-h-9 bg-shadow px-3 text-sm font-ui text-ivory"
+              className="h-7 bg-shadow px-3 text-sm font-ui text-ivory"
             >
               Play bar
             </button>
@@ -331,7 +332,7 @@ export function WalkThroughMode({
               <button
                 type="button"
                 onClick={() => void startDemo('selection')}
-                className="min-h-9 bg-brass px-3 text-sm font-ui text-ink"
+                className="h-7 bg-brass px-3 text-sm font-ui text-ink"
               >
                 Play sel {selLo}
                 {selHi !== selLo ? `–${selHi}` : ''}
@@ -344,7 +345,7 @@ export function WalkThroughMode({
                   setSelection(null)
                   selectAnchor.current = null
                 }}
-                className="min-h-9 bg-shadow px-2 text-sm font-ui text-dust"
+                className="h-7 bg-shadow px-2 text-sm font-ui text-dust"
               >
                 Clear
               </button>
@@ -352,7 +353,7 @@ export function WalkThroughMode({
           </>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3 py-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
         {(view === 'staff' || view === 'both') && (
           <StaffNotation
             notes={notes}
@@ -367,35 +368,32 @@ export function WalkThroughMode({
         {(view === 'roll' || view === 'both') && (
           <PianoRoll notes={notes} nowSec={nowSec} />
         )}
-        <div className="flex flex-col items-center justify-center py-1">
-          {steps.length === 0 ? (
-            <p className="font-ui text-sm text-dust">No notes in this loop / hand filter.</p>
-          ) : done ? (
-            <p className="font-display text-2xl text-brass">Loop complete</p>
-          ) : (
-            <>
-              <p className="font-ui text-xs text-dust">
-                {demo ? 'Demo' : 'Your turn'} · {stepIdx + 1}/{steps.length} ·
-                bar {displayMeasure}
-                {activeNotes.length
-                  ? ` · ${midiNames(activeNotes.map((n) => n.midi))}`
-                  : ''}
-                {demo
-                  ? ' · listening'
-                  : input.id === 'midi'
-                    ? activeNotes.length > 1
-                      ? ` · hold all ${activeNotes.length}`
-                      : ' · play on Kawai'
-                    : ' · MIDI or Skip'}
-              </p>
-            </>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1.5 pb-2">
+      </div>
+      <div className="flex shrink-0 flex-col gap-1 border-t border-dust/20 px-2 py-1">
+        <p className="text-center font-ui text-xs text-dust">
+          {steps.length === 0
+            ? 'No notes in this loop / hand filter.'
+            : done
+              ? 'Loop complete'
+              : `${demo ? 'Demo' : 'Your turn'} · ${stepIdx + 1}/${steps.length} · bar ${displayMeasure}${
+                  activeNotes.length
+                    ? ` · ${midiNames(activeNotes.map((n) => n.midi))}`
+                    : ''
+                }${
+                  demo
+                    ? ' · listening'
+                    : input.id === 'midi'
+                      ? activeNotes.length > 1
+                        ? ` · hold all ${activeNotes.length}`
+                        : ' · play on Kawai'
+                      : ' · MIDI or Skip'
+                }`}
+        </p>
+        <div className="flex gap-1">
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-10 flex-1 bg-shadow text-sm font-ui text-ivory disabled:opacity-40"
+            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
             onClick={jumpSongStart}
           >
             Song
@@ -403,7 +401,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-10 flex-1 bg-shadow text-sm font-ui text-ivory disabled:opacity-40"
+            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
             onClick={jumpBarStart}
           >
             Bar
@@ -411,7 +409,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-10 flex-1 bg-shadow text-sm font-ui text-ivory disabled:opacity-40"
+            className="h-8 flex-1 bg-shadow text-xs font-ui text-ivory disabled:opacity-40"
             onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
           >
             Back
@@ -419,7 +417,7 @@ export function WalkThroughMode({
           <button
             type="button"
             disabled={!!demo}
-            className="min-h-10 flex-1 bg-brass text-sm font-ui text-ink disabled:opacity-40"
+            className="h-8 flex-1 bg-brass text-xs font-ui text-ink disabled:opacity-40"
             onClick={() =>
               setStepIdx((i) => Math.min(steps.length - 1, i + 1))
             }
@@ -428,6 +426,7 @@ export function WalkThroughMode({
           </button>
         </div>
       </div>
+      <PianoBar activeMidis={activeNotes.map((n) => n.midi)} />
     </div>
   )
 }
@@ -446,7 +445,7 @@ function Header({
       <button
         type="button"
         onClick={onExit}
-        className="min-h-9 shrink-0 px-2 text-sm font-ui text-dust"
+        className="h-7 shrink-0 px-2 text-sm font-ui text-dust"
       >
         Exit
       </button>

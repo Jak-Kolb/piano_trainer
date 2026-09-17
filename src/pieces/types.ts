@@ -6,7 +6,7 @@ export interface PieceNote {
   /** Start time in seconds at original tempo */
   time: number
   duration: number
-  /** 0 = unclear / mixed, 1 = RH-ish (higher track), 2 = LH-ish */
+  /** MIDI track index from the file (used to separate LH/RH when ≥2 tracks). */
   track: number
   measure: number
 }

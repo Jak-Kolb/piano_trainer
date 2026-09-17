@@ -17,20 +17,20 @@ export function PieceControlsBar({
     onChange({ ...controls, ...patch })
 
   return (
-    <div className="w-full space-y-1.5 border-b border-dust/20 px-3 py-1.5">
-      <label className="flex items-center justify-between gap-3 font-ui text-sm text-dust">
-        Tempo {controls.tempoPercent}%
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-dust/20 px-3 py-1 font-ui text-xs text-dust">
+      <label className="flex items-center gap-2">
+        <span className="whitespace-nowrap">{controls.tempoPercent}%</span>
         <input
           type="range"
           min={40}
           max={140}
           value={controls.tempoPercent}
           onChange={(e) => set({ tempoPercent: Number(e.target.value) })}
-          className="w-48"
+          className="h-4 w-28"
         />
       </label>
-      <div className="flex flex-wrap items-center gap-2 font-ui text-sm text-dust">
-        <span>Loop</span>
+      <span className="flex items-center gap-1">
+        Loop
         <input
           type="number"
           min={1}
@@ -44,9 +44,9 @@ export function PieceControlsBar({
               ),
             })
           }
-          className="min-h-9 w-14 bg-shadow px-1.5 text-sm text-ivory"
+          className="h-7 w-12 bg-shadow px-1 text-ivory"
         />
-        <span>–</span>
+        –
         <input
           type="number"
           min={1}
@@ -60,12 +60,12 @@ export function PieceControlsBar({
               ),
             })
           }
-          className="min-h-9 w-14 bg-shadow px-1.5 text-sm text-ivory"
+          className="h-7 w-12 bg-shadow px-1 text-ivory"
         />
-        <span className="text-dust/70">/ {measureCount}</span>
-      </div>
+        <span className="text-dust/60">/{measureCount}</span>
+      </span>
       {hasTwoHands && (
-        <div className="flex gap-2">
+        <span className="flex gap-1">
           {([
             ['both', 'Both'],
             ['right', 'RH'],
@@ -75,7 +75,7 @@ export function PieceControlsBar({
               key={id}
               type="button"
               onClick={() => set({ hands: id })}
-              className={`min-h-9 px-3 text-sm font-ui ${
+              className={`h-7 px-2 ${
                 controls.hands === id
                   ? 'bg-brass text-ink'
                   : 'bg-shadow text-dust'
@@ -84,7 +84,7 @@ export function PieceControlsBar({
               {label}
             </button>
           ))}
-        </div>
+        </span>
       )}
     </div>
   )

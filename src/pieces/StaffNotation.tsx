@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import {
   Accidental,
+  Annotation,
   Barline,
   Formatter,
   Renderer,
@@ -8,7 +9,9 @@ import {
   StaveNote,
   Voice,
 } from 'vexflow'
+import { resolveHands } from './parseMidi'
 import type { PieceNote } from './types'
+import { midiNoteLabel, nameChordFromMidis } from './nameChord'
 import {
   durationToVex,
   midiToVexKey,
@@ -62,11 +65,21 @@ function isActiveGroup(g: PieceNote[], activeNotes: PieceNote[]): boolean {
   return true
 }
 
+function notesAtOnset(
+  fullBar: PieceNote[],
+  onset: number,
+  windowSec = 0.12,
+): PieceNote[] {
+  return fullBar.filter((n) => Math.abs(n.time - onset) <= windowSec)
+}
+
 function buildVoiceNotes(
   inBar: PieceNote[],
+  fullBar: PieceNote[],
   clef: 'treble' | 'bass',
   secPerQuarter: number,
   activeNotes: PieceNote[],
+  isTrebleNote: (n: PieceNote) => boolean,
 ): StaveNote[] {
   const groups = groupOnsets(inBar)
   const notes: StaveNote[] = []
@@ -91,6 +104,33 @@ function buildVoiceNotes(
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
       strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
     })
+
+    // Note names beside heads (below)
+    const label = g.map((n) => midiNoteLabel(n.midi)).join(' ')
+    const noteAnn = new Annotation(label)
+    noteAnn.setStyle({ fillStyle: isActive ? '#C08B3E' : '#9AA3B5' })
+    noteAnn.setFont('IBM Plex Sans', 9, 'normal')
+    noteAnn.setVerticalJustification(Annotation.VerticalJustify.BOTTOM)
+    sn.addModifier(noteAnn, 0)
+
+    {
+      const onsetNotes = notesAtOnset(fullBar, g[0]!.time)
+      const trebleOwns = onsetNotes.some(isTrebleNote)
+      const showChord =
+        (clef === 'treble' && trebleOwns) ||
+        (clef === 'bass' && !trebleOwns)
+      if (showChord) {
+        const chord = nameChordFromMidis(onsetNotes.map((n) => n.midi))
+        if (chord) {
+          const chordAnn = new Annotation(chord)
+          chordAnn.setStyle({ fillStyle: isActive ? '#C08B3E' : '#EDE4D3' })
+          chordAnn.setFont('IBM Plex Sans', 11, 'bold')
+          chordAnn.setVerticalJustification(Annotation.VerticalJustify.TOP)
+          sn.addModifier(chordAnn, 0)
+        }
+      }
+    }
+
     notes.push(sn)
     beats += vexDurationBeats(dur)
   }
@@ -157,6 +197,11 @@ export function StaffNotation({
     const draw = () => {
       el.innerHTML = ''
       const width = Math.max(640, Math.floor(box.clientWidth) || 900)
+      const hands = resolveHands(notes)
+      const isTrebleNote = (n: PieceNote) =>
+        hands ? n.track === hands.rh : n.midi >= 60
+      const isBassNote = (n: PieceNote) =>
+        hands ? n.track === hands.lh : n.midi < 60
 
       const lineStart =
         Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) *
@@ -173,12 +218,10 @@ export function StaffNotation({
           n.measure < lineStart + BARS_PER_SYSTEM * 2,
       )
       const hasTreble =
-        windowNotes.some((n) => n.midi >= 60) || windowNotes.length === 0
-      const hasBass =
-        windowNotes.some((n) => n.midi < 60) ||
-        notes.some((n) => n.midi < 60)
+        windowNotes.some(isTrebleNote) || windowNotes.length === 0
+      const hasBass = windowNotes.some(isBassNote) || notes.some(isBassNote)
       const showTreble = hasTreble || !hasBass
-      const showBass = hasBass
+      const showBass = hasBass || !!hands
       const rows = (showTreble ? 1 : 0) + (showBass ? 1 : 0)
       const systemH = 8 + rows * STAVE_H
       const height =
@@ -227,7 +270,7 @@ export function StaffNotation({
         const drawRow = (
           clef: 'treble' | 'bass',
           y: number,
-          pred: (m: number) => boolean,
+          pred: (n: PieceNote) => boolean,
         ) => {
           let x = marginLeft
           bars.forEach((barNum, bi) => {
@@ -237,15 +280,16 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
             stave.setContext(ctx).draw()
 
-            const inBar =
-              barNum <= measureCount
-                ? notesInMeasure(notes, barNum).filter((n) => pred(n.midi))
-                : []
+            const fullBar =
+              barNum <= measureCount ? notesInMeasure(notes, barNum) : []
+            const inBar = fullBar.filter(pred)
             const vfNotes = buildVoiceNotes(
               inBar,
+              fullBar,
               clef,
               secPerQuarter,
               activeNotes,
+              isTrebleNote,
             )
             const voice = new Voice({
               num_beats: 4,
@@ -273,11 +317,11 @@ export function StaffNotation({
 
         let y = y0 + 4
         if (showTreble) {
-          drawRow('treble', y, (m) => m >= 60)
+          drawRow('treble', y, isTrebleNote)
           y += STAVE_H
         }
         if (showBass) {
-          drawRow('bass', y, (m) => m < 60)
+          drawRow('bass', y, isBassNote)
         }
       }
 
@@ -339,7 +383,7 @@ export function StaffNotation({
         {hasNext ? ` + next ${nextStart}–${nextEnd}` : ''}
         {' · '}playing {measure}
         {selLabel ?? ''}
-        {' · '}click / shift-click
+        {' · '}{resolveHands(notes) ? 'tracks→hands' : 'pitch→clef'} · click / shift-click
       </p>
     </div>
   )
