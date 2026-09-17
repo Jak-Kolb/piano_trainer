@@ -45,3 +45,6 @@ Thumbs.db
 
 # Local planning / private specs (keep on disk, never publish)
 /spec/
+
+# Electron packaged builds
+release

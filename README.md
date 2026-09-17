@@ -71,3 +71,16 @@ macOS: after `npm install`, you can double-click `scripts/Keys.command`.
 ## Stack
 
 Vite · React · TypeScript · Tailwind · VexFlow · Tone.js · `@tonejs/midi`
+
+## Desktop app (this branch)
+
+Keys can also run as a native **Electron** window (same UI, Web MIDI enabled in-app).
+
+```bash
+npm install
+npm run electron:dev      # Vite + Electron window
+npm run electron:pack     # build macOS app into release/mac*/
+```
+
+Browser `npm start` still works. Prefer the desktop build when you want an app icon / window instead of a Chrome tab.
+
