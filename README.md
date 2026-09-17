@@ -1,84 +1,73 @@
 # Keys
 
-Offline piano practice app for a music stand: **Skills** drills and **Pieces** playthrough with real sheet music. Built for a Kawai (or any USB-MIDI keyboard) in Chrome.
+A music-stand piano practice app focused on **MIDI playthrough**: import a piece, read real sheet music, and play along on a USB keyboard with live grading and demo playback.
 
-![Home](docs/screenshots/01-home.png)
+![Playthrough](docs/screenshots/04-playthrough.png)
 
-## Features
+## Highly recommended: USB-MIDI piano
 
-- **Skills** — triad recall, inversions, scales/arpeggios, slash chords, sight-reading, rhythm, and more
-- **Pieces** — import MIDI, walk through with VexFlow sheet + on-screen 88-key piano
-- **Playthrough** — Play song / line / bar, pause & resume, measure navigation, sheet invert (light-on-dark ↔ dark-on-light)
-- **Input** — USB-MIDI auto-grade, or self-report Hit/Miss
+Keys is built around a **real piano / digital keyboard over USB-MIDI** (for example a Kawai with USB-B). That is the intended way to use playthrough and Skills drills.
+
+1. Connect the keyboard to your computer with a USB cable.
+2. Open Keys in **Chrome** (Web MIDI).
+3. On Home, choose **MIDI**.
+4. Play — held notes are graded automatically.
+
+Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but playthrough and practice feel much better with MIDI connected.
+
+## Playthrough
+
+1. Open **Pieces** → **Import MIDI** (`.mid` / `.midi`).
+2. The piece opens in walk-through / playthrough with:
+   - VexFlow **sheet music** (and optional piano roll)
+   - Full on-screen **88-key** piano with RH / LH colors
+   - **Play song / Play line / Play bar**, plus Pause / Resume / Stop
+   - Measure navigation (buttons, arrows, scroll)
+   - **Light on dark ↔ Dark on light** sheet invert
+3. Play the current step on your MIDI keyboard (or listen with Play song).
+
+Imported pieces stay in this browser’s IndexedDB on your machine — they are not uploaded anywhere.
+
+| Sheet (light on dark) | Sheet (dark on light) |
+| --- | --- |
+| ![Playthrough](docs/screenshots/04-playthrough.png) | ![Paper](docs/screenshots/05-playthrough-paper.png) |
+
+## Also included
+
+- **Skills** — triad recall, inversions, scales/arpeggios, reading drills, and more  
 - **Color profiles** — Night, Parchment, High contrast, Forest (Settings)
 
-## Screenshots
-
-| Home | Skills |
+| Home | Settings |
 | --- | --- |
-| ![Home](docs/screenshots/01-home.png) | ![Skills](docs/screenshots/02-skills.png) |
+| ![Home](docs/screenshots/01-home.png) | ![Settings](docs/screenshots/02-settings.png) |
 
-| Pieces library | Settings |
-| --- | --- |
-| ![Pieces](docs/screenshots/03-pieces.png) | ![Settings](docs/screenshots/04-settings.png) |
-
-| Drill | Home (narrow) |
-| --- | --- |
-| ![Drill](docs/screenshots/05-drill.png) | ![Mobile](docs/screenshots/06-home-mobile.png) |
+![Skills](docs/screenshots/03-skills.png)
 
 ## Requirements
 
-- **Node.js** 20+ (or current LTS)
-- **Chrome** (Web MIDI). Safari is not supported for MIDI.
-- Optional: USB-MIDI keyboard (e.g. Kawai KDP110 via USB-B)
+- Node.js 20+ (or current LTS)
+- **Google Chrome** (Web MIDI)
+- USB-MIDI keyboard strongly recommended
 
-## Install
+## Install & run
 
 ```bash
 git clone https://github.com/Jak-Kolb/piano_trainer.git
 cd piano_trainer
 npm install
-```
-
-## Run
-
-Production-style local preview (recommended):
-
-```bash
 npm start
 ```
 
-Opens **http://127.0.0.1:5173/** in Chrome.
-
-Dev server with hot reload:
+Opens **http://127.0.0.1:5173/** — use Chrome.
 
 ```bash
-npm run dev
+npm run dev    # hot reload
+npm test       # unit tests
+npm run build  # production build
 ```
 
-**macOS one-click:** after `npm install`, double-click `scripts/Keys.command` (or copy it to your Desktop).
-
-## Using the app
-
-1. On Home, pick **MIDI** (plug in the keyboard first) or **Self-report**.
-2. **Skills** — choose a drill and play (or tap Hit/Miss).
-3. **Pieces** — Import MIDI → open a piece → playthrough sheet.
-4. Toolbar: **Sheet / Roll / Both**, **Light on dark ↔ Dark on light**, Play song / line / bar, Pause / Resume / Stop.
-5. **Settings** — switch color profile (applies live).
-
-Imported pieces are stored in the browser (IndexedDB) on this machine.
-
-## Test & build
-
-```bash
-npm test
-npm run build
-```
+macOS: after `npm install`, you can double-click `scripts/Keys.command`.
 
 ## Stack
 
-Vite · React · TypeScript · Tailwind v4 · VexFlow · Tone.js · `@tonejs/midi`
-
-## License
-
-Private / personal project unless otherwise noted.
+Vite · React · TypeScript · Tailwind · VexFlow · Tone.js · `@tonejs/midi`
