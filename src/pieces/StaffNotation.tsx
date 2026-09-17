@@ -163,6 +163,27 @@ type Built = {
   sliceGroups: NoteSlice[][]
 }
 
+
+/**
+ * When a clef has long sustains overlapping short melody notes, put them in
+ * separate VexFlow voices so a whole-note hold does not consume the bar cursor
+ * and drop the eighths (Another Love mm.31–33 style).
+ */
+function partitionClefSlices(inBar: NoteSlice[], measureInfo: MeasureInfo): NoteSlice[][] {
+  const barBeats = measureInfo.beatsPerBar
+  const spq = measureInfo.durationSec / barBeats
+  const longThresh = spq * Math.max(2, barBeats * 0.7) // ~whole-bar or long hold
+  const longs = inBar.filter(s => s.duration >= longThresh - 1e-6)
+  const shorts = inBar.filter(s => s.duration < longThresh - 1e-6)
+  if (!longs.length || !shorts.length) return [inBar]
+  // Only split voices if they actually overlap in time
+  const overlaps = longs.some(L => shorts.some(S =>
+    S.time < L.time + L.duration - 0.02 && L.time < S.time + S.duration - 0.02
+  ))
+  if (!overlaps) return [inBar]
+  return [longs, shorts]
+}
+
 /**
  * Build a bar in time order: rests go in the gaps before/between notes,
  * not dumped at the end.
@@ -469,8 +490,13 @@ export function StaffNotation({
           // Floor formatter room so dense bars aren't given ~50px.
           const inner = Math.max(80, barWidths[bi]! - (bi === 0 ? 40 : 18))
 
-          const staves: { clef: 'treble' | 'bass'; stave: Stave; built: Built }[] =
-            []
+          type StaveRow = {
+            clef: 'treble' | 'bass'
+            stave: Stave
+            layers: Built[]
+          }
+          const staves: StaveRow[] = []
+          const barInfo = measureInfoAt(measures, barNum)
 
           if (showTreble) {
             const stave = new Stave(x, trebleY, barWidths[bi]!)
@@ -486,16 +512,17 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
-            const barInfo = measureInfoAt(measures, barNum)
-            const built = buildVoiceNotes(
-              inBar,
-              'treble',
-              activeNotes,
-              barInfo,
-              keySignature,
-              colors,
+            const layers = partitionClefSlices(inBar, barInfo).map((part) =>
+              buildVoiceNotes(
+                part,
+                'treble',
+                activeNotes,
+                barInfo,
+                keySignature,
+                colors,
+              ),
             )
-            staves.push({ clef: 'treble', stave, built })
+            staves.push({ clef: 'treble', stave, layers })
           }
 
           if (showBass) {
@@ -510,27 +537,32 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
-            const barInfo = measureInfoAt(measures, barNum)
-            const built = buildVoiceNotes(
-              inBar,
-              'bass',
-              activeNotes,
-              barInfo,
-              keySignature,
-              colors,
+            const layers = partitionClefSlices(inBar, barInfo).map((part) =>
+              buildVoiceNotes(
+                part,
+                'bass',
+                activeNotes,
+                barInfo,
+                keySignature,
+                colors,
+              ),
             )
-            staves.push({ clef: 'bass', stave, built })
+            staves.push({ clef: 'bass', stave, layers })
           }
 
-          const barBeats = Math.max(1, measureInfoAt(measures, barNum).beatsPerBar)
+          const barBeats = Math.max(1, barInfo.beatsPerBar)
           const voices: Voice[] = []
+          const voiceStaves: Stave[] = []
           for (const row of staves) {
-            const voice = new Voice({
-              num_beats: barBeats,
-              beat_value: 4,
-            }).setStrict(false)
-            voice.addTickables(row.built.notes)
-            voices.push(voice)
+            for (const built of row.layers) {
+              const voice = new Voice({
+                num_beats: barBeats,
+                beat_value: 4,
+              }).setStrict(false)
+              voice.addTickables(built.notes)
+              voices.push(voice)
+              voiceStaves.push(row.stave)
+            }
           }
 
           if (voices.length) {
@@ -547,8 +579,8 @@ export function StaffNotation({
             const fmt = new Formatter()
             fmt.joinVoices(voices)
             fmt.format(voices, inner)
-            staves.forEach((row, i) => {
-              voices[i]!.draw(ctx, row.stave)
+            voices.forEach((voice, i) => {
+              voice.draw(ctx, voiceStaves[i]!)
             })
             for (const beam of beams) {
               beam.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
@@ -565,16 +597,19 @@ export function StaffNotation({
               a.clef === 'bass' ? -1 : b.clef === 'bass' ? 1 : 0,
             )
             for (const row of rowsBassFirst) {
-              for (let gi = 0; gi < row.built.sliceGroups.length; gi++) {
-                const g = row.built.sliceGroups[gi]!
-                const fresh = g.filter((s) => !s.tieFromPrev)
-                if (
-                  fresh[0] &&
-                  Math.abs(fresh[0].time - mark.time) <= 0.08
-                ) {
-                  sn = row.built.notes[gi]
-                  break
+              for (const built of row.layers) {
+                for (let gi = 0; gi < built.sliceGroups.length; gi++) {
+                  const g = built.sliceGroups[gi]!
+                  const fresh = g.filter((s) => !s.tieFromPrev)
+                  if (
+                    fresh[0] &&
+                    Math.abs(fresh[0].time - mark.time) <= 0.08
+                  ) {
+                    sn = built.notes[gi]
+                    break
+                  }
                 }
+                if (sn) break
               }
               if (sn) break
             }
@@ -590,22 +625,24 @@ export function StaffNotation({
           }
 
           for (const row of staves) {
-            row.built.sliceGroups.forEach((g, gi) => {
-              const sn = row.built.notes[gi]!
-              g.forEach((slice, ki) => {
-                const key = `${row.clef}:${slice.id}`
-                const prev = placed.get(key)
-                if (slice.tieFromPrev && prev) {
-                  rowTies.push({
-                    first: prev.sn,
-                    last: sn,
-                    fi: prev.index,
-                    li: ki,
-                  })
-                }
-                placed.set(key, { sn, index: ki, measure: barNum })
+            for (const built of row.layers) {
+              built.sliceGroups.forEach((g, gi) => {
+                const sn = built.notes[gi]!
+                g.forEach((slice, ki) => {
+                  const key = `${row.clef}:${slice.id}`
+                  const prev = placed.get(key)
+                  if (slice.tieFromPrev && prev) {
+                    rowTies.push({
+                      first: prev.sn,
+                      last: sn,
+                      fi: prev.index,
+                      li: ki,
+                    })
+                  }
+                  placed.set(key, { sn, index: ki, measure: barNum })
+                })
               })
-            })
+            }
           }
 
         })
