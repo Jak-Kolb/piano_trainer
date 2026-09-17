@@ -49,13 +49,18 @@ export function WalkThroughMode({
   const [view, setView] = useState<ViewMode>('staff')
   const [demo, setDemo] = useState<DemoKind>(null)
   const [demoLoading, setDemoLoading] = useState(false)
+  const [demoPaused, setDemoPaused] = useState(false)
   const [demoNow, setDemoNow] = useState(0)
+  const [demoHighlight, setDemoHighlight] = useState<PieceNote[]>([])
   const [selection, setSelection] = useState<{
     start: number
     end: number
   } | null>(null)
   const selectAnchor = useRef<number | null>(null)
   const stopDemoRef = useRef<(() => void) | null>(null)
+  const pauseDemoRef = useRef<(() => void) | null>(null)
+  const resumeDemoRef = useRef<(() => void) | null>(null)
+  const pausedAtRef = useRef<number | null>(null)
   const demoMeta = useRef<{
     originSec: number
     endSec: number
@@ -71,21 +76,9 @@ export function WalkThroughMode({
   const maxMeasure = Math.max(controls.loopEndMeasure, parsed.measureCount)
 
   const activeNotes: PieceNote[] = useMemo(() => {
-    if (demo && demoMeta.current) {
-      const t = demoNow
-      let best: PieceNote[] = []
-      let bestTime = -1
-      for (const s of steps) {
-        const onset = s[0]?.time ?? -1
-        if (onset <= t + 0.02 && onset >= bestTime) {
-          bestTime = onset
-          best = s
-        }
-      }
-      return best
-    }
+    if (demo) return demoHighlight
     return step ?? []
-  }, [demo, demoNow, step, steps])
+  }, [demo, demoHighlight, step])
 
   const displayMeasure = activeNotes[0]?.measure ?? measure
   const nowSec = demo ? demoNow : (step?.[0]?.time ?? 0)
@@ -127,17 +120,6 @@ export function WalkThroughMode({
     }
   }, [])
 
-  useEffect(() => {
-    if (!demo) return
-    const t = demoNow
-    let idx = 0
-    for (let i = 0; i < steps.length; i++) {
-      const onset = steps[i]![0]?.time ?? 0
-      if (onset <= t + 0.02) idx = i
-      else break
-    }
-    setStepIdx(idx)
-  }, [demo, demoNow, steps])
 
   useEffect(() => {
     if (demo) return
@@ -154,8 +136,31 @@ export function WalkThroughMode({
   const stopDemo = () => {
     stopDemoRef.current?.()
     stopDemoRef.current = null
+    pauseDemoRef.current = null
+    resumeDemoRef.current = null
+    pausedAtRef.current = null
     demoMeta.current = null
+    setDemoPaused(false)
+    setDemoHighlight([])
     setDemo(null)
+  }
+
+  const pauseDemo = () => {
+    if (!demo || demoPaused) return
+    pauseDemoRef.current?.()
+    pausedAtRef.current = performance.now()
+    setDemoPaused(true)
+  }
+
+  const resumeDemo = () => {
+    if (!demo || !demoPaused) return
+    const pausedAt = pausedAtRef.current
+    if (pausedAt != null && demoMeta.current) {
+      demoMeta.current.startedAt += performance.now() - pausedAt
+    }
+    pausedAtRef.current = null
+    resumeDemoRef.current?.()
+    setDemoPaused(false)
   }
 
   const jumpToMeasure = (bar: number, opts?: { keepDemo?: boolean }) => {
@@ -252,13 +257,18 @@ export function WalkThroughMode({
     try {
       const handle = await playNotesDemo(slice, controls.tempoPercent)
       stopDemoRef.current = handle.stop
+      pauseDemoRef.current = handle.pause
+      resumeDemoRef.current = handle.resume
       demoMeta.current = {
         originSec: handle.originSec,
         endSec: handle.endSec,
         startedAt: handle.startedAt,
         tempoFactor,
       }
+      setDemoPaused(false)
       setDemoNow(handle.originSec)
+      const first = steps.find((s) => (s[0]?.measure ?? 0) >= lo) ?? []
+      setDemoHighlight(first)
       setDemo(kind)
       jumpToMeasure(lo, { keepDemo: true })
     } finally {
@@ -288,9 +298,8 @@ export function WalkThroughMode({
   }
 
   useEffect(() => {
-    if (!demo || !demoMeta.current) return
+    if (!demo || !demoMeta.current || demoPaused) return
     let raf = 0
-    let lastUiBucket = -1
     let lastOnset = -1
     const tick = () => {
       const meta = demoMeta.current
@@ -302,25 +311,30 @@ export function WalkThroughMode({
         stopDemo()
         return
       }
-      // Don't rebuild the whole staff 60fps during Play song — only when the
-      // sounding step changes, or ~12fps for line glide smoothness.
-      let onset = lastOnset
+      // 60fps playhead for CSS scroll; highlight only when the step changes
+      // so VexFlow is not rebuilt every frame.
+      setDemoNow(t)
+      let best: PieceNote[] = []
+      let onset = -1
+      let idx = 0
       for (let i = 0; i < steps.length; i++) {
         const o = steps[i]![0]?.time ?? -1
-        if (o <= t + 0.02) onset = o
-        else break
+        if (o <= t + 0.02) {
+          onset = o
+          best = steps[i]!
+          idx = i
+        } else break
       }
-      const bucket = Math.floor(t * 12)
-      if (onset !== lastOnset || bucket !== lastUiBucket) {
+      if (onset !== lastOnset) {
         lastOnset = onset
-        lastUiBucket = bucket
-        setDemoNow(t)
+        setDemoHighlight(best)
+        setStepIdx(idx)
       }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [demo, steps])
+  }, [demo, steps, demoPaused])
 
   const done =
     !demo &&
@@ -347,7 +361,7 @@ export function WalkThroughMode({
         title={title}
         status={
           demo
-            ? `Demo · ${demoStatus}`
+            ? `Demo · ${demoStatus}${demoPaused ? ' · paused' : ''}`
             : input.getStatus()
         }
         onExit={() => {
@@ -382,13 +396,22 @@ export function WalkThroughMode({
         ))}
         <span className="mx-1 h-5 w-px bg-dust/30" />
         {demo ? (
-          <button
-            type="button"
-            onClick={stopDemo}
-            className="h-7 bg-felt px-3 text-sm font-ui text-ivory"
-          >
-            Stop
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={demoPaused ? resumeDemo : pauseDemo}
+              className="h-7 bg-shadow px-3 text-sm font-ui text-ivory"
+            >
+              {demoPaused ? 'Resume' : 'Pause'}
+            </button>
+            <button
+              type="button"
+              onClick={stopDemo}
+              className="h-7 bg-felt px-3 text-sm font-ui text-ivory"
+            >
+              Stop
+            </button>
+          </>
         ) : demoLoading ? (
           <button
             type="button"

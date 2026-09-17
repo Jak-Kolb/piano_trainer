@@ -35,12 +35,11 @@ function handFor(
   return byMidi.get(midi) ?? null
 }
 
-function whiteBg(on: boolean, hand: PianoHand | null, isMiddle: boolean): string {
+function whiteBg(on: boolean, hand: PianoHand | null): string {
   if (on && hand === 'left') return 'bg-[#C45C6A]' // LH rose
   if (on && hand === 'right') return 'bg-brass' // RH gold
   if (on) return 'bg-brass'
-  if (isMiddle) return 'bg-[#C5C9D1]'
-  return 'bg-ivory'
+  return 'bg-white'
 }
 
 function blackBg(on: boolean, hand: PianoHand | null): string {
@@ -52,8 +51,8 @@ function blackBg(on: boolean, hand: PianoHand | null): string {
 
 export function PianoBar({
   activeKeys,
-  lowMidi = 36,
-  highMidi = 96,
+  lowMidi = 21,
+  highMidi = 108,
 }: Props) {
   const byMidi = new Map<number, PianoHand>()
   for (const k of activeKeys) {
@@ -112,7 +111,7 @@ export function PianoBar({
               const hand = handFor(m, byMidi)
               const on = hand != null
               const isMiddle = m === MIDDLE_C
-              const bg = whiteBg(on, hand, isMiddle)
+              const bg = whiteBg(on, hand)
               return (
                 <div
                   key={m}
@@ -131,7 +130,7 @@ export function PianoBar({
                   {(on || isMiddle) && (
                     <span
                       className={`block text-center font-ui text-[10px] font-semibold leading-none ${
-                        on ? 'text-ink' : 'text-ink/80'
+                        on ? 'text-black' : 'text-black/80'
                       }`}
                     >
                       {midiNoteLabel(m)}
@@ -179,7 +178,7 @@ export function PianoBar({
           LH
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[#C5C9D1]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-sm border border-dust bg-white" />
           Middle C
         </span>
         <span>· scroll if needed</span>

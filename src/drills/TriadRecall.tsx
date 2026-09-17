@@ -22,16 +22,10 @@ type Phase = 'prompt' | 'revealed' | 'done'
 
 interface Props {
   input: InputSource
-  /** Mic cannot grade chords — keep Hit/Miss. */
-  micFallsBackToSelfReport?: boolean
   onExit: () => void
 }
 
-export function TriadRecall({
-  input,
-  micFallsBackToSelfReport = false,
-  onExit,
-}: Props) {
+export function TriadRecall({ input, onExit }: Props) {
   const [phase, setPhase] = useState<Phase>('prompt')
   const [draw, setDraw] = useState(0)
   const [prompt, setPrompt] = useState<TriadPrompt>(() =>
@@ -75,10 +69,7 @@ export function TriadRecall({
     }
   }, [])
 
-  const autoGrade =
-    input.supportsAutomaticGrade() &&
-    input.id === 'midi' &&
-    !micFallsBackToSelfReport
+  const autoGrade = input.supportsAutomaticGrade() && input.id === 'midi'
 
   const targetMidi = useMemo(
     () => notesToMidi(prompt.notes, 4),
@@ -272,12 +263,6 @@ export function TriadRecall({
         round={`${Math.min(draw + 1, SESSION_LENGTH)} / ${SESSION_LENGTH}`}
         accuracy={accuracy}
       />
-      {micFallsBackToSelfReport && (
-        <p className="bg-shadow px-4 py-2 text-center font-ui text-sm text-dust">
-          Mic is monophonic — chord drills use Hit / Miss. Hearing a pitch still
-          shows above.
-        </p>
-      )}
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4">
         <p
           className="font-display font-bold leading-none text-ivory"

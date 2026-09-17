@@ -14,7 +14,7 @@ export function ModeSelector({ mode, status, onChange }: Props) {
   return (
     <div className="w-full max-w-xl space-y-3">
       <p className="font-ui text-sm text-dust">Input mode</p>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {INPUT_MODE_OPTIONS.map((opt) => {
           const disabled = opt.id === 'midi' && !midiSupported()
           const selected = mode === opt.id
