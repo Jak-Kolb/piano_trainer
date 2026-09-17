@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { InputSource } from '../input'
 import { playNotesDemo, lineStartMeasure } from './demoAudio'
+import { preloadPiano } from './pianoPlayer'
 import { midiChordHeld, midiNames } from './noteMatch'
 import { chordWindowSec, filterNotes, groupSteps } from './parseMidi'
 import { PianoRoll } from './PianoRoll'
@@ -48,6 +49,7 @@ export function WalkThroughMode({
   const [stepIdx, setStepIdx] = useState(0)
   const [view, setView] = useState<ViewMode>('staff')
   const [demo, setDemo] = useState<DemoKind>(null)
+  const [demoLoading, setDemoLoading] = useState(false)
   const [demoNow, setDemoNow] = useState(0)
   const stopDemoRef = useRef<(() => void) | null>(null)
   const demoMeta = useRef<{
@@ -83,6 +85,10 @@ export function WalkThroughMode({
 
   const displayMeasure = activeNotes[0]?.measure ?? measure
   const nowSec = demo ? demoNow : (step?.[0]?.time ?? 0)
+
+  useEffect(() => {
+    preloadPiano()
+  }, [])
 
   useEffect(() => {
     setStepIdx(0)
@@ -134,20 +140,24 @@ export function WalkThroughMode({
     if (!slice.length) return
 
     const tempoFactor = Math.max(0.25, controls.tempoPercent / 100)
-    const handle = await playNotesDemo(slice, controls.tempoPercent)
-    stopDemoRef.current = handle.stop
-    demoMeta.current = {
-      originSec: handle.originSec,
-      endSec: handle.endSec,
-      startedAt: handle.startedAt,
-      tempoFactor,
-    }
-    setDemoNow(handle.originSec)
-    setDemo(kind)
+    setDemoLoading(true)
+    try {
+      const handle = await playNotesDemo(slice, controls.tempoPercent)
+      stopDemoRef.current = handle.stop
+      demoMeta.current = {
+        originSec: handle.originSec,
+        endSec: handle.endSec,
+        startedAt: handle.startedAt,
+        tempoFactor,
+      }
+      setDemoNow(handle.originSec)
+      setDemo(kind)
 
-    // Jump practice cursor to first note of the demo range
-    const firstIdx = steps.findIndex((s) => (s[0]?.measure ?? 0) >= lo)
-    if (firstIdx >= 0) setStepIdx(firstIdx)
+      const firstIdx = steps.findIndex((s) => (s[0]?.measure ?? 0) >= lo)
+      if (firstIdx >= 0) setStepIdx(firstIdx)
+    } finally {
+      setDemoLoading(false)
+    }
   }
 
   // Demo clock
@@ -222,6 +232,14 @@ export function WalkThroughMode({
             className="min-h-12 bg-felt px-4 font-ui text-ivory"
           >
             Stop demo
+          </button>
+        ) : demoLoading ? (
+          <button
+            type="button"
+            disabled
+            className="min-h-12 bg-shadow px-4 font-ui text-dust"
+          >
+            Loading piano…
           </button>
         ) : (
           <>

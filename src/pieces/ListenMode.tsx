@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { playPianoNotes, preloadPiano } from './pianoPlayer'
 import { filterNotes } from './parseMidi'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
@@ -31,74 +32,75 @@ export function ListenMode({
     [parsed, controls],
   )
   const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [nowSec, setNowSec] = useState(notes[0]?.time ?? 0)
-  const ctxRef = useRef<AudioContext | null>(null)
-  const startWall = useRef(0)
-  const origin = useRef(0)
-  const scheduled = useRef<OscillatorNode[]>([])
+  const stopRef = useRef<(() => void) | null>(null)
+  const metaRef = useRef<{
+    originSec: number
+    endSec: number
+    startedAt: number
+    tempoFactor: number
+  } | null>(null)
 
-  const tempoFactor = controls.tempoPercent / 100
-
-  const stopAll = () => {
-    for (const o of scheduled.current) {
-      try {
-        o.stop()
-      } catch {
-        /* ignore */
-      }
-    }
-    scheduled.current = []
-  }
-
-  useEffect(() => () => stopAll(), [])
+  const tempoFactor = Math.max(0.25, controls.tempoPercent / 100)
 
   useEffect(() => {
-    if (!playing) return
+    preloadPiano()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      stopRef.current?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!playing || !metaRef.current) return
     let raf = 0
     const tick = () => {
+      const meta = metaRef.current
+      if (!meta) return
       const elapsed =
-        ((performance.now() - startWall.current) / 1000) * tempoFactor
-      const t = origin.current + elapsed
+        ((performance.now() - meta.startedAt) / 1000) * meta.tempoFactor
+      const t = meta.originSec + elapsed
       setNowSec(t)
-      const end =
-        (notes[notes.length - 1]?.time ?? 0) +
-        (notes[notes.length - 1]?.duration ?? 0)
-      if (t >= end) {
+      if (t >= meta.endSec) {
+        stopRef.current?.()
+        stopRef.current = null
+        metaRef.current = null
         setPlaying(false)
-        stopAll()
         return
       }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [playing, notes, tempoFactor])
+  }, [playing])
+
+  const stop = () => {
+    stopRef.current?.()
+    stopRef.current = null
+    metaRef.current = null
+    setPlaying(false)
+  }
 
   const play = async () => {
-    stopAll()
-    const ctx = ctxRef.current ?? new AudioContext()
-    ctxRef.current = ctx
-    await ctx.resume()
-    origin.current = notes[0]?.time ?? 0
-    startWall.current = performance.now()
-    setNowSec(origin.current)
-    setPlaying(true)
-
-    for (const n of notes) {
-      const when =
-        ctx.currentTime +
-        (n.time - origin.current) / tempoFactor
-      const dur = n.duration / tempoFactor
-      const osc = ctx.createOscillator()
-      const g = ctx.createGain()
-      osc.type = 'triangle'
-      osc.frequency.value = 440 * 2 ** ((n.midi - 69) / 12)
-      g.gain.value = 0.04
-      osc.connect(g)
-      g.connect(ctx.destination)
-      osc.start(when)
-      osc.stop(when + Math.max(0.05, dur))
-      scheduled.current.push(osc)
+    if (!notes.length) return
+    stop()
+    setLoading(true)
+    try {
+      const handle = await playPianoNotes(notes, controls.tempoPercent)
+      stopRef.current = handle.stop
+      metaRef.current = {
+        originSec: handle.originSec,
+        endSec: handle.endSec,
+        startedAt: handle.startedAt,
+        tempoFactor,
+      }
+      setNowSec(handle.originSec)
+      setPlaying(true)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -108,8 +110,7 @@ export function ListenMode({
         <button
           type="button"
           onClick={() => {
-            stopAll()
-            setPlaying(false)
+            stop()
             onExit()
           }}
           className="min-h-12 px-3 font-ui text-dust"
@@ -129,15 +130,14 @@ export function ListenMode({
         <PianoRoll notes={notes} nowSec={nowSec} />
         <button
           type="button"
-          className="min-h-16 bg-brass font-ui text-lg text-ink"
+          disabled={loading}
+          className="min-h-16 bg-brass font-ui text-lg text-ink disabled:opacity-50"
           onClick={() => {
-            if (playing) {
-              stopAll()
-              setPlaying(false)
-            } else void play()
+            if (playing) stop()
+            else void play()
           }}
         >
-          {playing ? 'Stop' : 'Play'}
+          {loading ? 'Loading piano…' : playing ? 'Stop' : 'Play'}
         </button>
       </div>
     </div>

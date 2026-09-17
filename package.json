@@ -19,6 +19,7 @@
     "idb": "^8.0.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "tone": "^15.1.22",
     "vexflow": "^4.2.2"
   },
   "devDependencies": {
