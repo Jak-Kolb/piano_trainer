@@ -24,6 +24,7 @@ export function ScaleDrill({
   const [key, setKey] = useState<(typeof KEYS)[number]>('C major')
   const [hand, setHand] = useState<'right' | 'left'>('right')
   const [step, setStep] = useState(0)
+  const [done, setDone] = useState(false)
   const [streak, setStreak] = useState(0)
   const advancedForStep = useRef(false)
 
@@ -51,12 +52,30 @@ export function ScaleDrill({
     return two.slice(0, notes.length)
   }, [fingering, notes.length])
 
-  const current = notes[step] ?? null
+  const current = done ? null : (notes[step] ?? null)
   const unverified =
     kind === 'scale' ? !fingeringFor(key, hand, 'scale')?.verified : true
+  const label = kind === 'scale' ? 'Scale' : 'Arpeggio'
+
+  const restart = () => {
+    setDone(false)
+    setStep(0)
+    advancedForStep.current = false
+  }
+
+  const advanceFromMatch = () => {
+    if (advancedForStep.current || done) return
+    advancedForStep.current = true
+    if (step >= notes.length - 1) {
+      setDone(true)
+      setStreak((s) => s + 1)
+      return
+    }
+    setStep((s) => s + 1)
+  }
 
   useEffect(() => {
-    setStep(0)
+    restart()
   }, [key, hand, kind])
 
   useEffect(() => {
@@ -64,39 +83,49 @@ export function ScaleDrill({
   }, [step])
 
   useEffect(() => {
-    if (!current) return
+    if (!current || done) return
     return input.onChange(() => {
       if (advancedForStep.current) return
 
       if (input.id === 'midi') {
         const held = input.getHeldMidiNotes()
-        // Exact octave required for scales/arpeggios
-        if (held.includes(current.midi)) {
-          advancedForStep.current = true
-          setStep((s) => Math.min(s + 1, notes.length - 1))
-        }
+        if (held.includes(current.midi)) advanceFromMatch()
         return
       }
 
       if (input.id === 'mic') {
-        // Mic is less reliable on octave — still prefer exact when hz maps cleanly
         const held = input.getHeldMidiNotes()
         const pcs = input.getHeldPitchClasses()
         if (held.includes(current.midi)) {
-          advancedForStep.current = true
-          setStep((s) => Math.min(s + 1, notes.length - 1))
+          advanceFromMatch()
         } else if (
           held.length === 0 &&
           pcs.length === 1 &&
           pcs[0] === ((current.midi % 12) + 12) % 12
         ) {
-          // Fallback: pitch class only if mic has no MIDI mapping
-          advancedForStep.current = true
-          setStep((s) => Math.min(s + 1, notes.length - 1))
+          advanceFromMatch()
         }
       }
     })
-  }, [input, current, notes.length])
+  }, [input, current, done, step, notes.length])
+
+  if (done) {
+    return (
+      <DrillFrame status={input.getStatus()} streak={streak} onExit={onExit}>
+        <p className="font-display text-4xl text-brass">{label} complete</p>
+        <p className="mt-3 font-ui text-dust">
+          {kind === 'scale' ? key : key.replace('major', 'arpeggio')} · {hand === 'right' ? 'RH' : 'LH'}
+        </p>
+        <button
+          type="button"
+          className="mt-8 min-h-16 bg-brass px-8 font-ui text-lg text-ink"
+          onClick={restart}
+        >
+          Again
+        </button>
+      </DrillFrame>
+    )
+  }
 
   return (
     <DrillFrame
@@ -114,11 +143,11 @@ export function ScaleDrill({
         <SelfReportButtons
           onHit={() => {
             setStreak((s) => s + 1)
-            setStep(0)
+            restart()
           }}
           onMiss={() => {
             setStreak(0)
-            setStep(0)
+            restart()
           }}
           showOnlyGrade
         />
@@ -184,9 +213,16 @@ export function ScaleDrill({
       <button
         type="button"
         className="mt-3 min-h-12 px-4 font-ui text-dust"
-        onClick={() => setStep((s) => Math.min(s + 1, notes.length - 1))}
+        onClick={() => {
+          if (step >= notes.length - 1) {
+            setDone(true)
+            setStreak((s) => s + 1)
+          } else {
+            setStep((s) => s + 1)
+          }
+        }}
       >
-        Next note
+        {step >= notes.length - 1 ? 'Finish' : 'Next note'}
       </button>
     </DrillFrame>
   )
