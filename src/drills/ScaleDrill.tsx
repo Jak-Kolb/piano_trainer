@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { KeyboardDiagram } from '../components/KeyboardDiagram'
 import type { InputSource } from '../input'
 import {
   fingeringFor,
-  formatNoteName,
-  pitchClass,
+  formatPitch,
   twoOctaveArpeggioNotes,
   twoOctaveScaleNotes,
 } from '../theory'
@@ -26,6 +25,7 @@ export function ScaleDrill({
   const [hand, setHand] = useState<'right' | 'left'>('right')
   const [step, setStep] = useState(0)
   const [streak, setStreak] = useState(0)
+  const advancedForStep = useRef(false)
 
   const fingering = useMemo(() => {
     if (kind === 'arpeggio') {
@@ -41,9 +41,9 @@ export function ScaleDrill({
   const notes = useMemo(
     () =>
       kind === 'arpeggio'
-        ? twoOctaveArpeggioNotes(key)
-        : twoOctaveScaleNotes(key),
-    [key, kind],
+        ? twoOctaveArpeggioNotes(key, hand)
+        : twoOctaveScaleNotes(key, hand),
+    [key, kind, hand],
   )
 
   const fingers = useMemo(() => {
@@ -60,13 +60,40 @@ export function ScaleDrill({
   }, [key, hand, kind])
 
   useEffect(() => {
-    if (input.id !== 'midi' && input.id !== 'mic') return
+    advancedForStep.current = false
+  }, [step])
+
+  useEffect(() => {
     if (!current) return
-    const target = pitchClass(current)
     return input.onChange(() => {
-      const pcs = input.getHeldPitchClasses()
-      if (pcs.length === 1 && pcs[0] === target) {
-        setStep((s) => Math.min(s + 1, notes.length - 1))
+      if (advancedForStep.current) return
+
+      if (input.id === 'midi') {
+        const held = input.getHeldMidiNotes()
+        // Exact octave required for scales/arpeggios
+        if (held.includes(current.midi)) {
+          advancedForStep.current = true
+          setStep((s) => Math.min(s + 1, notes.length - 1))
+        }
+        return
+      }
+
+      if (input.id === 'mic') {
+        // Mic is less reliable on octave — still prefer exact when hz maps cleanly
+        const held = input.getHeldMidiNotes()
+        const pcs = input.getHeldPitchClasses()
+        if (held.includes(current.midi)) {
+          advancedForStep.current = true
+          setStep((s) => Math.min(s + 1, notes.length - 1))
+        } else if (
+          held.length === 0 &&
+          pcs.length === 1 &&
+          pcs[0] === ((current.midi % 12) + 12) % 12
+        ) {
+          // Fallback: pitch class only if mic has no MIDI mapping
+          advancedForStep.current = true
+          setStep((s) => Math.min(s + 1, notes.length - 1))
+        }
       }
     })
   }, [input, current, notes.length])
@@ -128,6 +155,9 @@ export function ScaleDrill({
       <p className="font-display text-3xl text-ivory">
         {kind === 'scale' ? key : key.replace('major', 'arpeggio')}
       </p>
+      <p className="mt-1 font-ui text-sm text-dust">
+        MIDI needs the correct octave (C4 ≠ C5)
+      </p>
 
       <div className="mt-6 w-full max-w-lg">
         <KeyboardDiagram highlight={notes} active={current} hideLabels />
@@ -136,20 +166,20 @@ export function ScaleDrill({
       <div className="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
         {notes.map((n, i) => (
           <span
-            key={`${i}-${formatNoteName(n)}`}
+            key={`${i}-${formatPitch(n)}`}
             className={`flex min-h-16 min-w-14 flex-col items-center justify-center px-2 font-display ${
               i === step ? 'bg-brass text-ink' : 'bg-shadow text-ivory'
             }`}
           >
-            <span className="text-xl">{formatNoteName(n)}</span>
+            <span className="text-lg">{formatPitch(n)}</span>
             <span className="text-sm opacity-80">{fingers[i] ?? '·'}</span>
           </span>
         ))}
       </div>
 
       <p className="mt-4 font-ui text-dust">
-        {current ? formatNoteName(current) : '—'} · finger {fingers[step] ?? '—'}{' '}
-        · {step + 1}/{notes.length}
+        {current ? formatPitch(current) : '—'} · finger {fingers[step] ?? '—'} ·{' '}
+        {step + 1}/{notes.length}
       </p>
       <button
         type="button"
