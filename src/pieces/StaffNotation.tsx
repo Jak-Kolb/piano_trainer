@@ -11,7 +11,7 @@ import {
 } from 'vexflow'
 import { resolveHands } from './parseMidi'
 import type { PieceNote } from './types'
-import { midiNoteLabel, nameChordFromMidis } from './nameChord'
+import { nameChordFromMidis } from './nameChord'
 import {
   durationToVex,
   midiToVexKey,
@@ -104,14 +104,6 @@ function buildVoiceNotes(
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
       strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
     })
-
-    // Note names beside heads (below)
-    const label = g.map((n) => midiNoteLabel(n.midi)).join(' ')
-    const noteAnn = new Annotation(label)
-    noteAnn.setStyle({ fillStyle: isActive ? '#C08B3E' : '#9AA3B5' })
-    noteAnn.setFont('IBM Plex Sans', 9, 'normal')
-    noteAnn.setVerticalJustification(Annotation.VerticalJustify.BOTTOM)
-    sn.addModifier(noteAnn, 0)
 
     {
       const onsetNotes = notesAtOnset(fullBar, g[0]!.time)

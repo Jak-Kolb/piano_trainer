@@ -353,21 +353,29 @@ export function WalkThroughMode({
           </>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
-        {(view === 'staff' || view === 'both') && (
-          <StaffNotation
-            notes={notes}
-            measure={displayMeasure}
-            activeNotes={activeNotes}
-            secPerQuarter={parsed.secPerQuarter}
-            measureCount={maxMeasure}
-            selection={selection}
-            onMeasurePointer={onMeasurePointer}
-          />
-        )}
-        {(view === 'roll' || view === 'both') && (
-          <PianoRoll notes={notes} nowSec={nowSec} />
-        )}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
+        <div className="shrink-0">
+          {(view === 'staff' || view === 'both') && (
+            <StaffNotation
+              notes={notes}
+              measure={displayMeasure}
+              activeNotes={activeNotes}
+              secPerQuarter={parsed.secPerQuarter}
+              measureCount={maxMeasure}
+              selection={selection}
+              onMeasurePointer={onMeasurePointer}
+            />
+          )}
+          {(view === 'staff' || view === 'both') && (
+            <PianoBar activeMidis={activeNotes.map((n) => n.midi)} />
+          )}
+          {(view === 'roll' || view === 'both') && (
+            <PianoRoll notes={notes} nowSec={nowSec} />
+          )}
+          {view === 'roll' && (
+            <PianoBar activeMidis={activeNotes.map((n) => n.midi)} />
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 flex-col gap-1 border-t border-dust/20 px-2 py-1">
         <p className="text-center font-ui text-xs text-dust">
@@ -426,7 +434,6 @@ export function WalkThroughMode({
           </button>
         </div>
       </div>
-      <PianoBar activeMidis={activeNotes.map((n) => n.midi)} />
     </div>
   )
 }
