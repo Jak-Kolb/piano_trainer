@@ -404,31 +404,13 @@ export function StaffNotation({
       const usable = width - marginLeft - 8
       const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
 
-      /** Weight a bar by unique fresh onsets + extra chord notes (thickness). */
-      const barWeight = (inBarSlices: NoteSlice[], barStartT: number, spq: number): number => {
-        const onsetKeys = new Set<number>()
-        let freshSliceCount = 0
-        for (const s of inBarSlices) {
-          if (s.tieFromPrev) continue
-          freshSliceCount += 1
-          onsetKeys.add(Math.round(((s.time - barStartT) / spq) * 4) / 4)
-        }
-        const uniqueOnsets = onsetKeys.size
-        const extraNotes = Math.max(0, freshSliceCount - uniqueOnsets)
-        return Math.max(4, uniqueOnsets + extraNotes)
-      }
-
-      const barWidthsForSystem = (start: number): number[] => {
-        const weights: number[] = []
-        for (let i = 0; i < BPS; i++) {
-          const barNum = start + i
-          if (barNum > measureCount) break
-          const barStartT = barStartSec(barNum, secPerQuarter, bpb)
-          const inBar = slicesInMeasure(slices, barNum)
-          weights.push(barWeight(inBar, barStartT, Math.max(0.01, secPerQuarter)))
-        }
-        const sum = weights.reduce((a, b) => a + b, 0) || 1
-        return weights.map((w) => (usable * w) / sum)
+      // Equal bar widths: every measure on a line gets usable / BPS.
+      // (Proportional onset weighting made sparse bars look like they
+      // were crushed into one column; highlight hit a tiny strip.)
+      const equalBarWidthsForSystem = (start: number): number[] => {
+        const n = Math.max(0, Math.min(BPS, measureCount - start + 1))
+        const barW = usable / BPS
+        return Array.from({ length: n }, () => barW)
       }
 
       type TieKey = string
@@ -442,9 +424,9 @@ export function StaffNotation({
           { length: BPS },
           (_, i) => start + i,
         )
-        const barWidths = barWidthsForSystem(start)
-        const barX = (bi: number) =>
-          marginLeft + barWidths.slice(0, bi).reduce((a, w) => a + w, 0)
+        const barWidths = equalBarWidthsForSystem(start)
+        const barW = usable / BPS
+        const barX = (bi: number) => marginLeft + bi * barW
         systemsMeta.push({ start, top: y0, bottom: y0 + systemH, barWidths })
 
         bars.forEach((barNum, bi) => {
