@@ -1,5 +1,6 @@
 import * as Tone from 'tone'
 import type { PieceNote } from './types'
+import { velocityToGain } from './dynamics'
 
 /** Salamander Grand samples hosted by Tone.js (subset; Sampler interpolates). */
 const SALAMANDER_URLS: Record<string, string> = {
@@ -117,8 +118,7 @@ export async function playPianoNotes(
       MAX_VOICE_SEC,
       Math.max(0.08, n.duration / tempoFactor),
     )
-    // MIDI velocity → audible dynamics (keep a floor so pp still speaks)
-    const vel = Math.max(0.22, Math.min(0.95, (n.velocity ?? 0.7) * 0.9))
+    const vel = velocityToGain(n.velocity ?? 0.7)
     return {
       time: t,
       note: midiToNoteName(n.midi),
