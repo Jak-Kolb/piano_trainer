@@ -1,21 +1,24 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import {
   Accidental,
-  Annotation,
   Barline,
   Formatter,
   Renderer,
   Stave,
   StaveNote,
+  StaveTie,
   Voice,
 } from 'vexflow'
 import { resolveHands } from './parseMidi'
+import {
+  sliceNotesForTies,
+  slicesInMeasure,
+  type NoteSlice,
+} from './tieSlices'
 import type { PieceNote } from './types'
-import { nameChordFromMidis } from './nameChord'
 import {
   durationToVex,
   midiToVexKey,
-  notesInMeasure,
   restDurationsForBeats,
   vexDurationBeats,
 } from './midiToVex'
@@ -34,11 +37,11 @@ interface Props {
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
 }
 
-function groupOnsets(pool: PieceNote[], windowSec = 0.12): PieceNote[][] {
+function groupSlices(pool: NoteSlice[], windowSec = 0.12): NoteSlice[][] {
   if (!pool.length) return []
   const sorted = [...pool].sort((a, b) => a.time - b.time || a.midi - b.midi)
-  const groups: PieceNote[][] = []
-  let cur: PieceNote[] = [sorted[0]!]
+  const groups: NoteSlice[][] = []
+  let cur: NoteSlice[] = [sorted[0]!]
   let anchor = sorted[0]!.time
   for (let i = 1; i < sorted.length; i++) {
     const n = sorted[i]!
@@ -53,47 +56,49 @@ function groupOnsets(pool: PieceNote[], windowSec = 0.12): PieceNote[][] {
   return groups
 }
 
-function isActiveGroup(g: PieceNote[], activeNotes: PieceNote[]): boolean {
+function isActiveGroup(g: NoteSlice[], activeNotes: PieceNote[]): boolean {
   if (!activeNotes.length || !g.length) return false
+  // Active = this slice group is the sounding onset of the current step
+  // (match original MIDI onset, not a tie continuation)
   const stepTime = activeNotes[0]!.time
-  const groupTime = g[0]!.time
-  if (Math.abs(groupTime - stepTime) > 0.05) return false
+  const fresh = g.filter((s) => !s.tieFromPrev)
+  if (!fresh.length) return false
+  if (Math.abs(fresh[0]!.sourceTime - stepTime) > 0.05) return false
   const need = new Set(activeNotes.map((n) => n.midi))
-  const have = new Set(g.map((n) => n.midi))
+  const have = new Set(fresh.map((s) => s.midi))
   if (need.size !== have.size) return false
   for (const m of need) if (!have.has(m)) return false
   return true
 }
 
-function notesAtOnset(
-  fullBar: PieceNote[],
-  onset: number,
-  windowSec = 0.12,
-): PieceNote[] {
-  return fullBar.filter((n) => Math.abs(n.time - onset) <= windowSec)
+type Built = {
+  notes: StaveNote[]
+  /** For each StaveNote, the slices that built it (same order as keys). */
+  sliceGroups: NoteSlice[][]
 }
 
 function buildVoiceNotes(
-  inBar: PieceNote[],
-  fullBar: PieceNote[],
+  inBar: NoteSlice[],
   clef: 'treble' | 'bass',
   secPerQuarter: number,
   activeNotes: PieceNote[],
-  isTrebleNote: (n: PieceNote) => boolean,
-): StaveNote[] {
-  const groups = groupOnsets(inBar)
+): Built {
+  const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
+  const sliceGroups: NoteSlice[][] = []
   let beats = 0
 
   for (const g of groups) {
-    const keys = g.map((n) => midiToVexKey(n.midi))
+    const keys = g.map((s) => midiToVexKey(s.midi))
     const dur = durationToVex(
-      Math.max(...g.map((n) => n.duration)),
+      Math.max(...g.map((s) => s.duration)),
       secPerQuarter,
     )
     const sn = new StaveNote({ keys, duration: dur, clef })
     keys.forEach((k, i) => {
       const pitch = k.split('/')[0]!
+      // Skip accidental on tie continuations — pitch already established
+      if (g[i]?.tieFromPrev) return
       if (pitch.includes('#')) sn.addModifier(new Accidental('#'), i)
       else if (pitch.endsWith('bb')) sn.addModifier(new Accidental('bb'), i)
       else if (pitch.length > 1 && pitch.endsWith('b'))
@@ -104,26 +109,8 @@ function buildVoiceNotes(
       fillStyle: isActive ? '#C08B3E' : '#EDE4D3',
       strokeStyle: isActive ? '#C08B3E' : '#EDE4D3',
     })
-
-    {
-      const onsetNotes = notesAtOnset(fullBar, g[0]!.time)
-      const trebleOwns = onsetNotes.some(isTrebleNote)
-      const showChord =
-        (clef === 'treble' && trebleOwns) ||
-        (clef === 'bass' && !trebleOwns)
-      if (showChord) {
-        const chord = nameChordFromMidis(onsetNotes.map((n) => n.midi))
-        if (chord) {
-          const chordAnn = new Annotation(chord)
-          chordAnn.setStyle({ fillStyle: isActive ? '#C08B3E' : '#EDE4D3' })
-          chordAnn.setFont('IBM Plex Sans', 11, 'bold')
-          chordAnn.setVerticalJustification(Annotation.VerticalJustify.TOP)
-          sn.addModifier(chordAnn, 0)
-        }
-      }
-    }
-
     notes.push(sn)
+    sliceGroups.push(g)
     beats += vexDurationBeats(dur)
   }
 
@@ -136,6 +123,7 @@ function buildVoiceNotes(
     })
     rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
     notes.push(rest)
+    sliceGroups.push([])
   }
 
   if (!notes.length) {
@@ -146,9 +134,10 @@ function buildVoiceNotes(
     })
     rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
     notes.push(rest)
+    sliceGroups.push([])
   }
 
-  return notes
+  return { notes, sliceGroups }
 }
 
 function inSelection(
@@ -161,9 +150,6 @@ function inSelection(
   return bar >= lo && bar <= hi
 }
 
-/**
- * Draws current 8-bar line + next line. Click / shift-click bars to jump/select.
- */
 export function StaffNotation({
   notes,
   measure,
@@ -190,10 +176,12 @@ export function StaffNotation({
       el.innerHTML = ''
       const width = Math.max(640, Math.floor(box.clientWidth) || 900)
       const hands = resolveHands(notes)
-      const isTrebleNote = (n: PieceNote) =>
+      const isTrebleNote = (n: { track: number; midi: number }) =>
         hands ? n.track === hands.rh : n.midi >= 60
-      const isBassNote = (n: PieceNote) =>
+      const isBassNote = (n: { track: number; midi: number }) =>
         hands ? n.track === hands.lh : n.midi < 60
+
+      const slices = sliceNotesForTies(notes, secPerQuarter)
 
       const lineStart =
         Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) *
@@ -232,16 +220,18 @@ export function StaffNotation({
       const barW = usable / BARS_PER_SYSTEM
       const systemsMeta: { start: number; top: number; bottom: number }[] = []
 
+      type TieKey = string
+      const placed = new Map<
+        TieKey,
+        { sn: StaveNote; index: number; measure: number }
+      >()
+
       const drawSystem = (start: number, y0: number) => {
         const bars = Array.from(
           { length: BARS_PER_SYSTEM },
           (_, i) => start + i,
         )
-        systemsMeta.push({
-          start,
-          top: y0,
-          bottom: y0 + systemH,
-        })
+        systemsMeta.push({ start, top: y0, bottom: y0 + systemH })
 
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
@@ -262,9 +252,11 @@ export function StaffNotation({
         const drawRow = (
           clef: 'treble' | 'bass',
           y: number,
-          pred: (n: PieceNote) => boolean,
+          pred: (n: { track: number; midi: number }) => boolean,
         ) => {
           let x = marginLeft
+          const rowTies: { first: StaveNote; last: StaveNote; fi: number; li: number }[] = []
+
           bars.forEach((barNum, bi) => {
             const stave = new Stave(x, y, barW)
             if (bi === 0) stave.addClef(clef)
@@ -272,25 +264,41 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: '#EDE4D3', strokeStyle: '#5C6478' })
             stave.setContext(ctx).draw()
 
-            const fullBar =
-              barNum <= measureCount ? notesInMeasure(notes, barNum) : []
-            const inBar = fullBar.filter(pred)
-            const vfNotes = buildVoiceNotes(
+            const inBar =
+              barNum <= measureCount
+                ? slicesInMeasure(slices, barNum).filter(pred)
+                : []
+            const built = buildVoiceNotes(
               inBar,
-              fullBar,
               clef,
               secPerQuarter,
               activeNotes,
-              isTrebleNote,
             )
             const voice = new Voice({
               num_beats: 4,
               beat_value: 4,
             }).setStrict(false)
-            voice.addTickables(vfNotes)
+            voice.addTickables(built.notes)
             const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
             new Formatter().joinVoices([voice]).format([voice], inner)
             voice.draw(ctx, stave)
+
+            built.sliceGroups.forEach((g, gi) => {
+              const sn = built.notes[gi]!
+              g.forEach((slice, ki) => {
+                const key = `${clef}:${slice.id}`
+                const prev = placed.get(key)
+                if (slice.tieFromPrev && prev) {
+                  rowTies.push({
+                    first: prev.sn,
+                    last: sn,
+                    fi: prev.index,
+                    li: ki,
+                  })
+                }
+                placed.set(key, { sn, index: ki, measure: barNum })
+              })
+            })
 
             if (barNum === measure) {
               ctx.save()
@@ -305,6 +313,21 @@ export function StaffNotation({
 
             x += barW
           })
+
+          for (const t of rowTies) {
+            try {
+              new StaveTie({
+                first_note: t.first,
+                last_note: t.last,
+                first_indices: [t.fi],
+                last_indices: [t.li],
+              })
+                .setContext(ctx)
+                .draw()
+            } catch {
+              /* ignore tie draw failures */
+            }
+          }
         }
 
         let y = y0 + 4
@@ -317,8 +340,11 @@ export function StaffNotation({
         }
       }
 
+      // Clear placed between systems so ties don't span systems incorrectly
+      // (we redraw ties per row within a system; reset map each system)
       let y = 4
       for (const start of systemStarts) {
+        placed.clear()
         drawSystem(start, y)
         y += systemH + SYSTEM_GAP
       }
@@ -337,7 +363,6 @@ export function StaffNotation({
     1
   const lineEnd = lineStart + BARS_PER_SYSTEM - 1
   const nextStart = lineStart + BARS_PER_SYSTEM
-  const nextEnd = Math.min(measureCount, nextStart + BARS_PER_SYSTEM - 1)
   const hasNext = nextStart <= measureCount
 
   const handleClick = (e: MouseEvent) => {
@@ -372,10 +397,12 @@ export function StaffNotation({
       <div ref={host} className="w-full" />
       <p className="pb-1 text-center font-ui text-xs text-dust">
         Bars {lineStart}–{lineEnd}
-        {hasNext ? ` + next ${nextStart}–${nextEnd}` : ''}
+        {hasNext ? ` + next ${nextStart}–${Math.min(measureCount, nextStart + BARS_PER_SYSTEM - 1)}` : ''}
         {' · '}playing {measure}
         {selLabel ?? ''}
-        {' · '}{resolveHands(notes) ? 'tracks→hands' : 'pitch→clef'} · click / shift-click
+        {' · '}
+        {resolveHands(notes) ? 'tracks→hands' : 'pitch→clef'} · click /
+        shift-click
       </p>
     </div>
   )
