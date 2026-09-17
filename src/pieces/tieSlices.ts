@@ -15,7 +15,7 @@ export interface NoteSlice {
   sourceTime: number
 }
 
-function barStartSec(
+export function barStartSec(
   measure: number,
   secPerQuarter: number,
   beatsPerBar = 4,

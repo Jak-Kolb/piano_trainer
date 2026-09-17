@@ -11,6 +11,7 @@ import {
 } from 'vexflow'
 import { resolveHands } from './parseMidi'
 import {
+  barStartSec,
   sliceNotesForTies,
   slicesInMeasure,
   type NoteSlice,
@@ -77,27 +78,78 @@ type Built = {
   sliceGroups: NoteSlice[][]
 }
 
+function pushRests(
+  beats: number,
+  clef: 'treble' | 'bass',
+  notes: StaveNote[],
+  sliceGroups: NoteSlice[][],
+) {
+  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
+  for (const rd of restDurationsForBeats(beats)) {
+    const rest = new StaveNote({
+      keys: [restKey],
+      duration: `${rd}r`,
+      clef,
+    })
+    rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
+    notes.push(rest)
+    sliceGroups.push([])
+  }
+}
+
+/**
+ * Build a bar in time order: rests go in the gaps before/between notes,
+ * not dumped at the end.
+ */
 function buildVoiceNotes(
   inBar: NoteSlice[],
   clef: 'treble' | 'bass',
   secPerQuarter: number,
   activeNotes: PieceNote[],
+  measure: number,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
   const sliceGroups: NoteSlice[][] = []
-  let beats = 0
+  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
+  const spq = Math.max(0.01, secPerQuarter)
+  const barStart = barStartSec(measure, spq)
+  const barBeats = 4
+  let cursor = 0 // beats from start of bar
+
+  if (!groups.length) {
+    pushRests(barBeats, clef, notes, sliceGroups)
+    return { notes, sliceGroups }
+  }
 
   for (const g of groups) {
+    const onset =
+      Math.round(((g[0]!.time - barStart) / spq) * 4) / 4 // 16th grid
+    const gap = onset - cursor
+    if (gap >= 0.24) {
+      pushRests(gap, clef, notes, sliceGroups)
+      cursor += gap
+    }
+
+    // Don't let this note's written duration overrun the next onset
+    const rawBeats =
+      Math.max(...g.map((s) => s.duration)) / spq
+    let noteBeats = vexDurationBeats(durationToVex(rawBeats * spq, spq))
+    // Snap note start to cursor if slightly early (overlap / rounding)
+    const start = Math.max(cursor, Math.min(onset, barBeats))
+    const room = barBeats - start
+    if (noteBeats > room && room > 0) {
+      // shrink to what fits in the bar visually
+      noteBeats = vexDurationBeats(
+        durationToVex(room * spq, spq),
+      )
+    }
+    const dur = durationToVex(noteBeats * spq, spq)
+
     const keys = g.map((s) => midiToVexKey(s.midi))
-    const dur = durationToVex(
-      Math.max(...g.map((s) => s.duration)),
-      secPerQuarter,
-    )
     const sn = new StaveNote({ keys, duration: dur, clef })
     keys.forEach((k, i) => {
       const pitch = k.split('/')[0]!
-      // Skip accidental on tie continuations — pitch already established
       if (g[i]?.tieFromPrev) return
       if (pitch.includes('#')) sn.addModifier(new Accidental('#'), i)
       else if (pitch.endsWith('bb')) sn.addModifier(new Accidental('bb'), i)
@@ -111,19 +163,11 @@ function buildVoiceNotes(
     })
     notes.push(sn)
     sliceGroups.push(g)
-    beats += vexDurationBeats(dur)
+    cursor = Math.max(cursor, start + vexDurationBeats(dur))
   }
 
-  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
-  for (const rd of restDurationsForBeats(Math.max(0, 4 - beats))) {
-    const rest = new StaveNote({
-      keys: [restKey],
-      duration: `${rd}r`,
-      clef,
-    })
-    rest.setStyle({ fillStyle: '#5C6478', strokeStyle: '#5C6478' })
-    notes.push(rest)
-    sliceGroups.push([])
+  if (cursor < barBeats - 0.2) {
+    pushRests(barBeats - cursor, clef, notes, sliceGroups)
   }
 
   if (!notes.length) {
@@ -273,6 +317,7 @@ export function StaffNotation({
               clef,
               secPerQuarter,
               activeNotes,
+              barNum,
             )
             const voice = new Voice({
               num_beats: 4,
