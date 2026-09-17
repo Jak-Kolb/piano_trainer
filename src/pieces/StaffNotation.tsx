@@ -93,17 +93,15 @@ function groupSlices(pool: NoteSlice[], windowSec = 0.12): NoteSlice[][] {
 
 function isActiveGroup(g: NoteSlice[], activeNotes: PieceNote[]): boolean {
   if (!activeNotes.length || !g.length) return false
-  // Active = this slice group is the sounding onset of the current step
-  // (match original MIDI onset, not a tie continuation)
+  // Active = this slice group is part of the current step's onset.
+  // Hands are split across staves, so match a non-empty subset of the step
+  // midis (exact set equality hid downbeat two-hand chords).
   const stepTime = activeNotes[0]!.time
   const fresh = g.filter((s) => !s.tieFromPrev)
   if (!fresh.length) return false
   if (Math.abs(fresh[0]!.sourceTime - stepTime) > 0.05) return false
   const need = new Set(activeNotes.map((n) => n.midi))
-  const have = new Set(fresh.map((s) => s.midi))
-  if (need.size !== have.size) return false
-  for (const m of need) if (!have.has(m)) return false
-  return true
+  return fresh.every((s) => need.has(s.midi))
 }
 
 
@@ -492,19 +490,6 @@ export function StaffNotation({
             })
           }
 
-          if (barNum === measure) {
-            ctx.save()
-            ctx.setStrokeStyle('#C08B3E')
-            ctx.setLineWidth(3)
-            ctx.beginPath()
-            const top = showTreble ? trebleY + 8 : bassY + 8
-            const bot =
-              (showBass ? bassY : trebleY) + STAVE_H - 10
-            ctx.moveTo(x + 3, top)
-            ctx.lineTo(x + 3, bot)
-            ctx.stroke()
-            ctx.restore()
-          }
         })
 
         for (const t of rowTies) {
