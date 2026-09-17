@@ -84,16 +84,15 @@ function Shell({
   children: ReactNode
 }) {
   return (
-    <div className="flex h-full flex-col bg-ink">
-      <button
-        type="button"
-        onClick={onBack}
-        className="min-h-12 self-start px-4 py-3 font-ui text-dust"
-      >
-        Back
-      </button>
+    <div className="page-shell">
+      <div className="topbar">
+        <button type="button" onClick={onBack} className="btn btn-ghost">
+          Back
+        </button>
+        <span />
+      </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6">
-        <h1 className="font-display text-3xl text-ivory">{title}</h1>
+        <h1 className="page-title page-title--section">{title}</h1>
         {children}
       </div>
     </div>

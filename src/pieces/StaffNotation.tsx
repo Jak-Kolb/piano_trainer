@@ -645,7 +645,7 @@ export function StaffNotation({
   return (
     <div
       ref={wrap}
-      className="w-full cursor-pointer overflow-hidden rounded bg-shadow px-2 py-1"
+      className="staff-frame"
       onClick={handleClick}
       title="Click a bar to jump · Shift-click to select · Scroll to move measures"
     >
