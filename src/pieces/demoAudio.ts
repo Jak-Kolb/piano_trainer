@@ -24,10 +24,11 @@ export function lineStartMeasure(measure: number, barsPerLine = 8): number {
 
 /**
  * How many bars fit on one staff line, from the time signature.
- * Targets ~24 quarter-beats of music (was a fixed 8 bars = 32 in 4/4).
+ * Targets ~12 quarter-beats for readable density (cap 4, min 3).
+ * 3/4 → 4 bars/line, 4/4 → 3, 6/8-style → 3.
  */
 export function barsPerSystem(beatsPerBar: number): number {
   const bpb = Math.max(1, Math.round(beatsPerBar) || 4)
-  const TARGET_BEATS = 24
-  return Math.max(3, Math.min(8, Math.round(TARGET_BEATS / bpb)))
+  const TARGET_BEATS = 12
+  return Math.max(3, Math.min(4, Math.round(TARGET_BEATS / bpb)))
 }
