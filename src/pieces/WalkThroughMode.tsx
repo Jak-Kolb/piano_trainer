@@ -3,7 +3,7 @@ import type { InputSource } from '../input'
 import { barsPerSystem, playNotesDemo, lineStartMeasure } from './demoAudio'
 import { preloadPiano } from './pianoPlayer'
 import { midiChordHeld, midiNames } from './noteMatch'
-import { chordWindowSec, filterNotes, groupSteps } from './parseMidi'
+import { chordWindowSec, filterNotes, groupSteps, resolveHands } from './parseMidi'
 import { PianoBar } from './PianoBar'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
@@ -89,6 +89,20 @@ export function WalkThroughMode({
 
   const displayMeasure = activeNotes[0]?.measure ?? measure
   const nowSec = demo ? demoNow : (step?.[0]?.time ?? 0)
+
+  const activeKeys = useMemo(() => {
+    const hands = resolveHands(notes)
+    return activeNotes.map((n) => {
+      let hand: 'right' | 'left' | 'unknown' = 'unknown'
+      if (hands) {
+        if (n.track === hands.rh) hand = 'right'
+        else if (n.track === hands.lh) hand = 'left'
+      } else {
+        hand = n.midi >= 60 ? 'right' : 'left'
+      }
+      return { midi: n.midi, hand }
+    })
+  }, [activeNotes, notes])
 
   const selLo = selection
     ? Math.min(selection.start, selection.end)
@@ -370,13 +384,13 @@ export function WalkThroughMode({
             />
           )}
           {(view === 'staff' || view === 'both') && (
-            <PianoBar activeMidis={activeNotes.map((n) => n.midi)} />
+            <PianoBar activeKeys={activeKeys} />
           )}
           {(view === 'roll' || view === 'both') && (
             <PianoRoll notes={notes} nowSec={nowSec} />
           )}
           {view === 'roll' && (
-            <PianoBar activeMidis={activeNotes.map((n) => n.midi)} />
+            <PianoBar activeKeys={activeKeys} />
           )}
         </div>
       </div>
