@@ -1,7 +1,6 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import {
   Accidental,
-  Annotation,
   Barline,
   Dot,
   Formatter,
@@ -146,8 +145,6 @@ function buildVoiceNotes(
   activeNotes: PieceNote[],
   measure: number,
   keySignature: string,
-  /** Piece-level dynamic marks to place on this clef (bass only, usually). */
-  marksInBar: { time: number; label: string }[],
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -206,23 +203,6 @@ function buildVoiceNotes(
     })
     // Dot modifier is visual only; timing comes from "qd" duration above
     if (dur.dots > 0) Dot.buildAndAttach([sn], { all: true })
-
-    // Piece-level dynamic mark (once at change) — attach to nearest onset
-    const fresh = g.filter((s) => !s.tieFromPrev)
-    if (fresh.length && marksInBar.length) {
-      const onset = fresh[0]!.time
-      const hit = marksInBar.find((m) => Math.abs(m.time - onset) <= 0.08)
-      if (hit) {
-        const ann = new Annotation(hit.label)
-        ann.setFont('Times New Roman', 13, 'italic')
-        ann.setVerticalJustification(Annotation.VerticalJustify.TOP)
-        ann.setStyle({ fillStyle: '#C4B8A0', strokeStyle: '#C4B8A0' })
-        sn.addModifier(ann, 0)
-        // consume so we don't stamp the same mark on another chord
-        const ix = marksInBar.indexOf(hit)
-        if (ix >= 0) marksInBar.splice(ix, 1)
-      }
-    }
 
     const isActive = isActiveGroup(g, activeNotes)
     sn.setStyle({
@@ -448,7 +428,6 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
-              [], // piano dynamics sit above the bass staff, not duplicated on treble
             )
             staves.push({ clef: 'treble', stave, built })
           }
@@ -472,9 +451,6 @@ export function StaffNotation({
               activeNotes,
               barNum,
               keySignature,
-              pieceDynMarks
-                .filter((m) => m.measure === barNum)
-                .map((m) => ({ time: m.time, label: m.label })),
             )
             staves.push({ clef: 'bass', stave, built })
           }
@@ -496,6 +472,34 @@ export function StaffNotation({
             staves.forEach((row, i) => {
               voices[i]!.draw(ctx, row.stave)
             })
+          }
+
+          // Dynamics in the gap above the bass (not Annotation-on-note —
+          // low bass chords with long up-stems dragged "mp" into the treble).
+          const barMarks = pieceDynMarks.filter((m) => m.measure === barNum)
+          for (const mark of barMarks) {
+            let sn: StaveNote | undefined
+            for (const row of staves) {
+              row.built.sliceGroups.forEach((g, gi) => {
+                const fresh = g.filter((s) => !s.tieFromPrev)
+                if (
+                  fresh[0] &&
+                  Math.abs(fresh[0].time - mark.time) <= 0.08
+                ) {
+                  sn = row.built.notes[gi]
+                }
+              })
+            }
+            if (!sn) continue
+            const mx = sn.getAbsoluteX()
+            const my = showBass
+              ? bassY - 4
+              : trebleY + STAVE_H - 12
+            ctx.save()
+            ctx.setFont('Times New Roman', 13, 'italic')
+            ctx.setFillStyle('#C4B8A0')
+            ctx.fillText(mark.label, mx, my)
+            ctx.restore()
           }
 
           for (const row of staves) {
