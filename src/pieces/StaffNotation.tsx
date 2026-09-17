@@ -17,7 +17,7 @@ import {
   vexDurationBeats,
 } from './midiToVex'
 
-const BARS_PER_SYSTEM = 4
+const BARS_PER_SYSTEM = 8
 
 interface Props {
   notes: PieceNote[]
@@ -105,7 +105,7 @@ function buildVoiceNotes(
 }
 
 /**
- * Always draws a 4-bar system (like reading a line of sheet music).
+ * Always draws an 8-bar system (like reading a line of sheet music).
  * Notes are padded with rests so spacing follows rhythm, not stretched gaps.
  */
 export function StaffNotation({
@@ -131,11 +131,10 @@ export function StaffNotation({
         Math.floor((Math.max(1, measure) - 1) / BARS_PER_SYSTEM) *
           BARS_PER_SYSTEM +
         1
-      // Always 4 slots so the line looks like sheet music
-      const bars = [0, 1, 2, 3].map((i) => start + i)
+      const bars = Array.from({ length: BARS_PER_SYSTEM }, (_, i) => start + i)
 
       const systemNotes = notes.filter(
-        (n) => n.measure >= bars[0]! && n.measure <= bars[3]!,
+        (n) => n.measure >= bars[0]! && n.measure <= bars[bars.length - 1]!,
       )
       const hasTreble =
         systemNotes.some((n) => n.midi >= 60) || systemNotes.length === 0
