@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { InputSource } from '../input'
 import { barsPerSystem, playNotesDemo, lineStartMeasure } from './demoAudio'
 import { preloadPiano } from './pianoPlayer'
-import { midiChordHeld, midiNames } from './noteMatch'
+import {
+  canAcceptMidiStep,
+  latchAfterMidiAccept,
+  midiChordHeld,
+  midiNames,
+  pruneMidiLatch,
+} from './noteMatch'
 import { chordWindowSec, filterNotes, groupSteps, resolveHands } from './parseMidi'
 import { PianoBar } from './PianoBar'
 import { PianoRoll } from './PianoRoll'
@@ -51,6 +57,7 @@ export function WalkThroughMode({
     [notes, parsed.secPerQuarter],
   )
   const [stepIdx, setStepIdx] = useState(0)
+  const latchedMidi = useRef<Set<number>>(new Set())
   const [view, setView] = useState<ViewMode>('staff')
   const [sheetPolarity, setSheetPolarity] = useState<SheetPolarity>(() =>
     loadSheetPolarity(),
@@ -120,6 +127,7 @@ export function WalkThroughMode({
     setStepIdx(0)
     setSelection(null)
     selectAnchor.current = null
+    latchedMidi.current = new Set()
   }, [notes])
 
   useEffect(() => {
@@ -134,10 +142,11 @@ export function WalkThroughMode({
     if (!step || input.id !== 'midi') return
     return input.onChange(() => {
       const held = input.getHeldMidiNotes()
+      latchedMidi.current = pruneMidiLatch(latchedMidi.current, held)
       if (held.length === 0) return
-      if (midiChordHeld(held, step)) {
-        setStepIdx((i) => Math.min(i + 1, Math.max(0, steps.length - 1)))
-      }
+      if (!canAcceptMidiStep(held, step, latchedMidi.current)) return
+      latchedMidi.current = latchAfterMidiAccept(held)
+      setStepIdx((i) => Math.min(i + 1, Math.max(0, steps.length - 1)))
     })
   }, [input, step, steps.length, demo])
 
@@ -173,6 +182,7 @@ export function WalkThroughMode({
 
   const jumpToMeasure = (bar: number, opts?: { keepDemo?: boolean }) => {
     if (!opts?.keepDemo) stopDemo()
+    latchedMidi.current = new Set()
     const exact = steps.findIndex((s) => s[0]?.measure === bar)
     if (exact >= 0) {
       setStepIdx(exact)
@@ -184,6 +194,7 @@ export function WalkThroughMode({
 
   const jumpSongStart = () => {
     stopDemo()
+    latchedMidi.current = new Set()
     setStepIdx(0)
     setSelection(null)
     selectAnchor.current = null
