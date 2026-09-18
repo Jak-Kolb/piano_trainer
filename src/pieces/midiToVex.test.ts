@@ -19,6 +19,10 @@ describe('beatsToVex / durationToVex', () => {
   it('maps 3 to dotted half', () => {
     expect(beatsToVex(3)).toEqual({ key: 'h', dots: 1, beats: 3 })
   })
+
+  it('maps 3.8 near-full-bar beats to a whole note', () => {
+    expect(beatsToVex(3.8)).toEqual({ key: 'w', dots: 0, beats: 4 })
+  })
 })
 
 describe('restDurationsForBeats', () => {
