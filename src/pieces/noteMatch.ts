@@ -36,3 +36,34 @@ export function midiChordHeld(heldMidi: number[], expected: PieceNote[]): boolea
   const held = new Set(heldMidi)
   return expected.every((n) => held.has(n.midi))
 }
+
+/** Drop latched midis that are no longer held. */
+export function pruneMidiLatch(
+  latch: ReadonlySet<number>,
+  heldMidi: number[],
+): Set<number> {
+  const held = new Set(heldMidi)
+  const next = new Set<number>()
+  for (const m of latch) {
+    if (held.has(m)) next.add(m)
+  }
+  return next
+}
+
+/**
+ * True when the chord is held AND at least one expected note is a fresh
+ * attack (not still latched from the previous accepted step).
+ */
+export function canAcceptMidiStep(
+  heldMidi: number[],
+  expected: PieceNote[],
+  latch: ReadonlySet<number>,
+): boolean {
+  if (!midiChordHeld(heldMidi, expected)) return false
+  return expected.some((n) => !latch.has(n.midi))
+}
+
+/** After accepting a step, latch everything currently held. */
+export function latchAfterMidiAccept(heldMidi: number[]): Set<number> {
+  return new Set(heldMidi)
+}
