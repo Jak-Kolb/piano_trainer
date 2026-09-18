@@ -437,13 +437,19 @@ export function StaffNotation({
       const usable = width - marginLeft - 8
       const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
 
-      // Equal bar widths: every measure on a line gets usable / BPS.
-      // (Proportional onset weighting made sparse bars look like they
-      // were crushed into one column; highlight hit a tiny strip.)
-      const equalBarWidthsForSystem = (start: number): number[] => {
+      // Equal *music* width per bar. First bar of each system is wider by
+      // CLEF_PAD so clef + key signature don't steal space from the notes
+      // (which made the first measure look squished at the end).
+      const NOTE_INSET = 28
+      const CLEF_PAD = 52
+      const barWidthsForSystem = (start: number): number[] => {
         const n = Math.max(0, Math.min(BPS, measureCount - start + 1))
-        const barW = usable / BPS
-        return Array.from({ length: n }, () => barW)
+        if (n <= 0) return []
+        const musicUsable = Math.max(n * 60, usable - CLEF_PAD)
+        const share = musicUsable / n
+        return Array.from({ length: n }, (_, i) =>
+          i === 0 ? share + CLEF_PAD : share,
+        )
       }
 
       type TieKey = string
@@ -459,9 +465,9 @@ export function StaffNotation({
           { length: BPS },
           (_, i) => start + i,
         )
-        const barWidths = equalBarWidthsForSystem(start)
-        const barW = usable / BPS
-        const barX = (bi: number) => marginLeft + bi * barW
+        const barWidths = barWidthsForSystem(start)
+        const barX = (bi: number) =>
+          marginLeft + barWidths.slice(0, bi).reduce((a, w) => a + w, 0)
         systemsMeta.push({ start, top: y0, bottom: y0 + systemH, barWidths })
 
         bars.forEach((barNum, bi) => {
@@ -497,7 +503,7 @@ export function StaffNotation({
           // Floor formatter room so dense bars aren't given ~50px.
           // Non-clef bars: ~10px more left inset so barline-tied chords aren't
           // glued to the previous bar's last chord (Another Love m49→m50).
-          const leftReserve = bi === 0 ? 40 : 28
+          const leftReserve = bi === 0 ? NOTE_INSET + CLEF_PAD : NOTE_INSET
 
           type StaveRow = {
             clef: 'treble' | 'bass'
