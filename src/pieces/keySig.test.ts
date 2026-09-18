@@ -18,3 +18,12 @@ describe('writtenAccidental', () => {
     expect(writtenAccidental('f#', 'C')).toBe('#')
   })
 })
+
+  it('treats bb as B-flat, not B double-flat', () => {
+    expect(writtenAccidental('bb', 'D')).toBe('b')
+    expect(writtenAccidental('bb', 'C')).toBe('b')
+  })
+
+  it('still supports real double-flats like bbb', () => {
+    expect(writtenAccidental('bbb', 'C')).toBe('bb')
+  })
