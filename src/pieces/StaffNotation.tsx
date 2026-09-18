@@ -248,7 +248,7 @@ function buildVoiceNotes(
     const capped = Math.min(Math.max(rawBeats, 0.25), room)
     const dur = durationToVex(capped * spq, spq)
 
-    const keys = g.map((s) => midiToVexKey(s.midi))
+    const keys = g.map((s) => midiToVexKey(s.midi, keySignature))
     const sn = new StaveNote({
       keys,
       duration: vexDurationString(dur, false),
