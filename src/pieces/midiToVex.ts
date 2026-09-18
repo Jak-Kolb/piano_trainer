@@ -1,13 +1,28 @@
 import type { PieceNote } from './types'
 
-const PC_NAMES = [
+const PC_SHARP = [
   'c',
   'c#',
+  'd',
+  'd#',
+  'e',
+  'f',
+  'f#',
+  'g',
+  'g#',
+  'a',
+  'a#',
+  'b',
+] as const
+
+const PC_FLAT = [
+  'c',
+  'db',
   'd',
   'eb',
   'e',
   'f',
-  'f#',
+  'gb',
   'g',
   'ab',
   'a',
@@ -15,10 +30,37 @@ const PC_NAMES = [
   'b',
 ] as const
 
-export function midiToVexKey(midi: number): string {
+/** Flat-key signatures (and relative minors we might store as letter names). */
+const FLAT_KEYS = new Set([
+  'F',
+  'Bb',
+  'Eb',
+  'Ab',
+  'Db',
+  'Gb',
+  'Cb',
+  'd',
+  'g',
+  'c',
+  'f',
+  'bb',
+  'eb',
+  'ab',
+])
+
+export function keyPrefersFlats(keySignature: string): boolean {
+  return FLAT_KEYS.has((keySignature || 'C').trim())
+}
+
+/**
+ * MIDI → VexFlow key. Spelling follows the piece key so chromatics in
+ * sharp keys use sharps (A# not Bb) and flat keys use flats.
+ */
+export function midiToVexKey(midi: number, keySignature = 'C'): string {
   const pc = ((midi % 12) + 12) % 12
   const oct = Math.floor(midi / 12) - 1
-  return `${PC_NAMES[pc]}/${oct}`
+  const names = keyPrefersFlats(keySignature) ? PC_FLAT : PC_SHARP
+  return `${names[pc]}/${oct}`
 }
 
 /** VexFlow base duration + optional augmentation dots. */
