@@ -3,8 +3,10 @@ import { KeyManager } from 'vexflow'
 /** Parse a Vex pitch root like "f#", "bb", "c". */
 export function parsePitchRoot(root: string): { letter: string; acc: string } {
   const r = root.toLowerCase()
-  if (r.endsWith('bb')) return { letter: r[0]!, acc: 'bb' }
-  if (r.endsWith('##')) return { letter: r[0]!, acc: '##' }
+  // Double accidentals need a letter + "bb"/"##" (e.g. "bbb", "f##").
+  // Plain "bb" is B-flat — must not be read as B double-flat.
+  if (r.length >= 3 && r.endsWith('bb')) return { letter: r[0]!, acc: 'bb' }
+  if (r.length >= 3 && r.endsWith('##')) return { letter: r[0]!, acc: '##' }
   if (r.includes('#')) return { letter: r[0]!, acc: '#' }
   if (r.length > 1 && r.endsWith('b')) return { letter: r[0]!, acc: 'b' }
   return { letter: r[0]!, acc: '' }
