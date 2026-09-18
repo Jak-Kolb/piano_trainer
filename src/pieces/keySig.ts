@@ -49,3 +49,33 @@ export function writtenAccidental(
   if (acc === '#' || acc === 'b' || acc === 'bb') return acc
   return null
 }
+
+/**
+ * Accidental glyph for this note given measure persistence.
+ * `seen` maps "letter/octave" → last effective accidental in the bar
+ * ("" | "#" | "b" | "bb"). Missing entries mean "still following the key".
+ * Mutates `seen` when a glyph is (or would be) written.
+ */
+export function accidentalForMeasure(
+  pitchRoot: string,
+  octave: string | number,
+  keySignature: string,
+  seen: Map<string, string>,
+): '#' | 'b' | 'bb' | 'n' | null {
+  const { letter, acc } = parsePitchRoot(pitchRoot)
+  const slot = `${letter}/${octave}`
+  let keyExpected = ''
+  try {
+    const km = new KeyManager(keySignature || 'C')
+    keyExpected = (km.getAccidental(letter)?.accidental ?? '') as string
+  } catch {
+    keyExpected = ''
+  }
+  const prev = seen.has(slot) ? seen.get(slot)! : keyExpected
+  if (acc === prev) return null
+  seen.set(slot, acc)
+  if (acc === '') return 'n'
+  if (acc === '#' || acc === 'b' || acc === 'bb') return acc
+  return null
+}
+

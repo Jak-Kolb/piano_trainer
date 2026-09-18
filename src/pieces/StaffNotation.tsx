@@ -19,7 +19,7 @@ import {
   type NoteSlice,
 } from './tieSlices'
 import type { MeasureInfo, PieceNote } from './types'
-import { writtenAccidental } from './keySig'
+import { accidentalForMeasure } from './keySig'
 import { dynamicMarksForPiece } from './dynamics'
 import {
   durationToVex,
@@ -203,6 +203,8 @@ function buildVoiceNotes(
   measureInfo: MeasureInfo,
   keySignature: string,
   colors: ReturnType<typeof sheetColorsForPolarity>,
+  /** Shared across voices on this clef so accidentals persist for the bar. */
+  measureAccidentals: Map<string, string>,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
@@ -256,8 +258,13 @@ function buildVoiceNotes(
     })
     keys.forEach((k, i) => {
       if (g[i]?.tieFromPrev) return
-      const pitch = k.split('/')[0]!
-      const acc = writtenAccidental(pitch, keySignature)
+      const [pitch, oct] = k.split('/')
+      const acc = accidentalForMeasure(
+        pitch!,
+        oct!,
+        keySignature,
+        measureAccidentals,
+      )
       if (acc) sn.addModifier(new Accidental(acc), i)
     })
     // Dot modifier is visual only; timing comes from "qd" duration above
@@ -527,6 +534,7 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
+            const trebleAcc = new Map<string, string>()
             const layers = partitionClefSlices(inBar, barInfo).map((part) =>
               buildVoiceNotes(
                 part,
@@ -535,6 +543,7 @@ export function StaffNotation({
                 barInfo,
                 keySignature,
                 colors,
+                trebleAcc,
               ),
             )
             staves.push({ clef: 'treble', stave, layers })
@@ -552,6 +561,7 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
+            const bassAcc = new Map<string, string>()
             const layers = partitionClefSlices(inBar, barInfo).map((part) =>
               buildVoiceNotes(
                 part,
@@ -560,6 +570,7 @@ export function StaffNotation({
                 barInfo,
                 keySignature,
                 colors,
+                bassAcc,
               ),
             )
             staves.push({ clef: 'bass', stave, layers })
