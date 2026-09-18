@@ -514,6 +514,8 @@ export function WalkThroughMode({
               }}
               keySignature={parsed.keySignature}
               barsPerLine={barsPerLine}
+              beatsPerBar={parsed.beatsPerBar}
+              measures={parsed.measures}
               polarity={sheetPolarity}
             />
           )}

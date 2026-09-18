@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   Accidental,
   Barline,
+  Beam,
   Dot,
   Formatter,
   Renderer,
@@ -12,12 +13,12 @@ import {
 } from 'vexflow'
 import { resolveHands } from './parseMidi'
 import {
-  barStartSec,
+  measureInfoAt,
   sliceNotesForTies,
   slicesInMeasure,
   type NoteSlice,
 } from './tieSlices'
-import type { PieceNote } from './types'
+import type { MeasureInfo, PieceNote } from './types'
 import { writtenAccidental } from './keySig'
 import { dynamicMarksForPiece } from './dynamics'
 import {
@@ -26,6 +27,11 @@ import {
   restDurationsForBeats,
   type VexDuration,
 } from './midiToVex'
+import {
+  isPureTieContinuation,
+  shouldDrawPartialInbound,
+  shouldDrawPartialOutbound,
+} from './staffTies'
 import {
   sheetColorsForPolarity,
   type SheetPolarity,
@@ -80,6 +86,13 @@ interface Props {
   keySignature?: string
   /** Bars drawn per staff line (from time signature). */
   barsPerLine?: number
+  /** Beats per bar from the piece time signature (default 4) — first bar. */
+  beatsPerBar?: number
+  /**
+   * Per-measure absolute timeline (index 0 = measure 1). Required for correct
+   * layout after tempo / time-signature changes.
+   */
+  measures: MeasureInfo[]
   /** Light notes on dark paper, or dark notes on light paper. */
   polarity?: SheetPolarity
 }
@@ -155,6 +168,27 @@ type Built = {
   sliceGroups: NoteSlice[][]
 }
 
+
+/**
+ * When a clef has long sustains overlapping short melody notes, put them in
+ * separate VexFlow voices so a whole-note hold does not consume the bar cursor
+ * and drop the eighths (Another Love mm.31–33 style).
+ */
+function partitionClefSlices(inBar: NoteSlice[], measureInfo: MeasureInfo): NoteSlice[][] {
+  const barBeats = measureInfo.beatsPerBar
+  const spq = measureInfo.durationSec / barBeats
+  const longThresh = spq * Math.max(2, barBeats * 0.7) // ~whole-bar or long hold
+  const longs = inBar.filter(s => s.duration >= longThresh - 1e-6)
+  const shorts = inBar.filter(s => s.duration < longThresh - 1e-6)
+  if (!longs.length || !shorts.length) return [inBar]
+  // Only split voices if they actually overlap in time
+  const overlaps = longs.some(L => shorts.some(S =>
+    S.time < L.time + L.duration - 0.02 && L.time < S.time + S.duration - 0.02
+  ))
+  if (!overlaps) return [inBar]
+  return [longs, shorts]
+}
+
 /**
  * Build a bar in time order: rests go in the gaps before/between notes,
  * not dumped at the end.
@@ -165,18 +199,18 @@ type Built = {
 function buildVoiceNotes(
   inBar: NoteSlice[],
   clef: 'treble' | 'bass',
-  secPerQuarter: number,
   activeNotes: PieceNote[],
-  measure: number,
+  measureInfo: MeasureInfo,
   keySignature: string,
   colors: ReturnType<typeof sheetColorsForPolarity>,
 ): Built {
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
   const sliceGroups: NoteSlice[][] = []
-  const spq = Math.max(0.01, secPerQuarter)
-  const barStart = barStartSec(measure, spq)
-  const barBeats = 4
+  const barBeats = Math.max(1, measureInfo.beatsPerBar)
+  // Local SPQ for this bar — critical when tempo changed since the first bar.
+  const spq = Math.max(0.01, measureInfo.durationSec / barBeats)
+  const barStart = measureInfo.startSec
   let cursor = 0 // beats from start of bar (must match Σ glyph beats)
 
   const emitRests = (beats: number) => {
@@ -246,10 +280,9 @@ function buildVoiceNotes(
 
   if (cursor < barBeats - 0.001) emitRests(barBeats - cursor)
 
-  // Final safety: still short → whole rest (empty-ish bar)
+  // Final safety: still empty → rests covering the bar
   if (!notes.length) {
-    notes.push(makeRest(clef, { key: 'w', dots: 0, beats: 4 }, colors))
-    sliceGroups.push([])
+    emitRests(barBeats)
   }
 
   return { notes, sliceGroups }
@@ -269,7 +302,7 @@ export function StaffNotation({
   notes,
   measure,
   activeNotes,
-  secPerQuarter,
+  secPerQuarter: _secPerQuarter,
   measureCount,
   selection,
   onMeasurePointer,
@@ -277,14 +310,15 @@ export function StaffNotation({
   nowSec,
   keySignature = 'C',
   barsPerLine = 6,
+  beatsPerBar: _beatsPerBar = 4,
+  measures,
   polarity = 'light-on-dark',
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const layout = useRef<{
-    systems: { start: number; top: number; bottom: number }[]
+    systems: { start: number; top: number; bottom: number; barWidths: number[] }[]
     marginLeft: number
-    barW: number
     scrollY: number
   } | null>(null)
   const scrollAccum = useRef(0)
@@ -299,6 +333,7 @@ export function StaffNotation({
   }, [])
 
   const BPS = Math.max(3, barsPerLine)
+  void _secPerQuarter
 
   useEffect(() => {
     const el = wrap.current
@@ -337,12 +372,15 @@ export function StaffNotation({
       const isBassNote = (n: { track: number; midi: number }) =>
         hands ? n.track === hands.lh : n.midi < 60
 
-      const slices = sliceNotesForTies(notes, secPerQuarter)
+      void _beatsPerBar
+
+      const slices = sliceNotesForTies(notes, measures)
       // One mark per real dynamic change in the piece (not per staff line)
       const pieceDynMarks = dynamicMarksForPiece(notes)
 
-      const barStart = barStartSec(measure, secPerQuarter)
-      const barDur = 4 * Math.max(0.01, secPerQuarter)
+      const playInfo = measureInfoAt(measures, measure)
+      const barStart = playInfo.startSec
+      const barDur = Math.max(0.01, playInfo.durationSec)
       const tPlay =
         nowSec ??
         activeNotes[0]?.time ??
@@ -395,36 +433,55 @@ export function StaffNotation({
       ctx.setFillStyle(colors.note)
       ctx.setStrokeStyle(colors.staff)
 
-      const marginLeft = 8
+            const marginLeft = 8
       const usable = width - marginLeft - 8
-      const barW = usable / BPS
-      const systemsMeta: { start: number; top: number; bottom: number }[] = []
+      const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
+
+      // Equal *music* width per bar. First bar of each system is wider by
+      // CLEF_PAD so clef + key signature don't steal space from the notes
+      // (which made the first measure look squished at the end).
+      const NOTE_INSET = 28
+      const CLEF_PAD = 52
+      const barWidthsForSystem = (start: number): number[] => {
+        const n = Math.max(0, Math.min(BPS, measureCount - start + 1))
+        if (n <= 0) return []
+        const musicUsable = Math.max(n * 60, usable - CLEF_PAD)
+        const share = musicUsable / n
+        return Array.from({ length: n }, (_, i) =>
+          i === 0 ? share + CLEF_PAD : share,
+        )
+      }
 
       type TieKey = string
       const placed = new Map<
         TieKey,
-        { sn: StaveNote; index: number; measure: number }
+        { sn: StaveNote; index: number; measure: number; tieToNext: boolean }
       >()
+      /** StaveNotes that already got a full same-system outbound StaveTie. */
+      const fullTieFirstNotes = new Set<StaveNote>()
 
       const drawSystem = (start: number, y0: number) => {
         const bars = Array.from(
           { length: BPS },
           (_, i) => start + i,
         )
-        systemsMeta.push({ start, top: y0, bottom: y0 + systemH })
+        const barWidths = barWidthsForSystem(start)
+        const barX = (bi: number) =>
+          marginLeft + barWidths.slice(0, bi).reduce((a, w) => a + w, 0)
+        systemsMeta.push({ start, top: y0, bottom: y0 + systemH, barWidths })
 
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
-          const x = marginLeft + bi * barW
+          const x = barX(bi)
           if (inSelection(barNum, selection)) {
             ctx.save()
             ctx.setFillStyle(hexToRgba(colors.active, 0.22))
-            ctx.fillRect(x, y0, barW, systemH)
+            ctx.fillRect(x, y0, barWidths[bi]!, systemH)
             ctx.restore()
           } else if (barNum === measure) {
             ctx.save()
             ctx.setFillStyle(hexToRgba(colors.active, 0.08))
-            ctx.fillRect(x, y0, barW, systemH)
+            ctx.fillRect(x, y0, barWidths[bi]!, systemH)
             ctx.restore()
           }
         })
@@ -433,8 +490,8 @@ export function StaffNotation({
         const bassY =
           trebleY + (showTreble ? STAVE_H + CLEF_GAP : 0)
         const rowTies: {
-          first: StaveNote
-          last: StaveNote
+          first: StaveNote | null
+          last: StaveNote | null
           fi: number
           li: number
         }[] = []
@@ -442,38 +499,49 @@ export function StaffNotation({
         // so the same beat lines up vertically across clefs.
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
-          const x = marginLeft + bi * barW
-          const inner = Math.max(50, barW - (bi === 0 ? 40 : 18))
+          const x = barX(bi)
+          // Floor formatter room so dense bars aren't given ~50px.
+          // Non-clef bars: ~10px more left inset so barline-tied chords aren't
+          // glued to the previous bar's last chord (Another Love m49→m50).
+          const leftReserve = bi === 0 ? NOTE_INSET + CLEF_PAD : NOTE_INSET
 
-          const staves: { clef: 'treble' | 'bass'; stave: Stave; built: Built }[] =
-            []
+          type StaveRow = {
+            clef: 'treble' | 'bass'
+            stave: Stave
+            layers: Built[]
+          }
+          const staves: StaveRow[] = []
+          const barInfo = measureInfoAt(measures, barNum)
 
           if (showTreble) {
-            const stave = new Stave(x, trebleY, barW)
+            const stave = new Stave(x, trebleY, barWidths[bi]!)
             if (bi === 0) {
               stave.addClef('treble')
               if (keySignature && keySignature !== 'C') {
                 stave.addKeySignature(keySignature)
               }
+              // Measure number at the start of each staff line (printed-music style).
+              stave.setMeasure(start)
             }
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
-            const built = buildVoiceNotes(
-              inBar,
-              'treble',
-              secPerQuarter,
-              activeNotes,
-              barNum,
-              keySignature,
-              colors,
+            const layers = partitionClefSlices(inBar, barInfo).map((part) =>
+              buildVoiceNotes(
+                part,
+                'treble',
+                activeNotes,
+                barInfo,
+                keySignature,
+                colors,
+              ),
             )
-            staves.push({ clef: 'treble', stave, built })
+            staves.push({ clef: 'treble', stave, layers })
           }
 
           if (showBass) {
-            const stave = new Stave(x, bassY, barW)
+            const stave = new Stave(x, bassY, barWidths[bi]!)
             if (bi === 0) {
               stave.addClef('bass')
               if (keySignature && keySignature !== 'C') {
@@ -484,35 +552,89 @@ export function StaffNotation({
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
             const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
-            const built = buildVoiceNotes(
-              inBar,
-              'bass',
-              secPerQuarter,
-              activeNotes,
-              barNum,
-              keySignature,
-              colors,
+            const layers = partitionClefSlices(inBar, barInfo).map((part) =>
+              buildVoiceNotes(
+                part,
+                'bass',
+                activeNotes,
+                barInfo,
+                keySignature,
+                colors,
+              ),
             )
-            staves.push({ clef: 'bass', stave, built })
+            staves.push({ clef: 'bass', stave, layers })
           }
 
+          // Extra inset when the first sounding tickable is a pure tie continuation
+          // (keeps equal bar widths; only shrinks formatter room).
+          let leadingTieCont = false
+          outer: for (const row of staves) {
+            for (const built of row.layers) {
+              for (let gi = 0; gi < built.sliceGroups.length; gi++) {
+                const g = built.sliceGroups[gi]!
+                if (!g.length) continue // rest
+                leadingTieCont = isPureTieContinuation(g)
+                break outer
+              }
+            }
+          }
+          const inner = Math.max(
+            80,
+            barWidths[bi]! - (leftReserve + (leadingTieCont ? 10 : 0)),
+          )
+
+          const barBeats = Math.max(1, barInfo.beatsPerBar)
           const voices: Voice[] = []
+          const voiceStaves: Stave[] = []
+          /** StaveNotes that are pure tie continuations — exclude from beams. */
+          const continuationNotes = new Set<StaveNote>()
           for (const row of staves) {
-            const voice = new Voice({
-              num_beats: 4,
-              beat_value: 4,
-            }).setStrict(false)
-            voice.addTickables(row.built.notes)
-            voices.push(voice)
+            for (const built of row.layers) {
+              built.sliceGroups.forEach((g, gi) => {
+                if (isPureTieContinuation(g)) {
+                  continuationNotes.add(built.notes[gi]!)
+                }
+              })
+              const voice = new Voice({
+                num_beats: barBeats,
+                beat_value: 4,
+              }).setStrict(false)
+              voice.addTickables(built.notes)
+              voices.push(voice)
+              voiceStaves.push(row.stave)
+            }
           }
 
           if (voices.length) {
+            // Beam consecutive 8ths/16ths/… within each beat group (VexFlow
+            // defaults for the bar's time signature). Create before format so
+            // flags are suppressed; draw after voices so beams sit on top.
+            // Skip pure tie-continuation chords so they aren't beamed into the
+            // next eighths (squashed look at barlines like Another Love m49→m50).
+            const timeSig = `${barBeats}/4`
+            const beamGroups = Beam.getDefaultBeamGroups(timeSig)
+            const beams: Beam[] = []
+            for (const voice of voices) {
+              const beamable = voice
+                .getTickables()
+                .filter((t) => !continuationNotes.has(t as StaveNote))
+              beams.push(
+                ...Beam.generateBeams(beamable as StaveNote[], {
+                  groups: beamGroups,
+                }),
+              )
+            }
+
             const fmt = new Formatter()
             fmt.joinVoices(voices)
             fmt.format(voices, inner)
-            staves.forEach((row, i) => {
-              voices[i]!.draw(ctx, row.stave)
+            voices.forEach((voice, i) => {
+              voice.draw(ctx, voiceStaves[i]!)
             })
+            for (const beam of beams) {
+              beam.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
+              beam.setContext(ctx).draw()
+            }
           }
 
           // Dynamics in the gap above the bass (not Annotation-on-note —
@@ -524,16 +646,19 @@ export function StaffNotation({
               a.clef === 'bass' ? -1 : b.clef === 'bass' ? 1 : 0,
             )
             for (const row of rowsBassFirst) {
-              for (let gi = 0; gi < row.built.sliceGroups.length; gi++) {
-                const g = row.built.sliceGroups[gi]!
-                const fresh = g.filter((s) => !s.tieFromPrev)
-                if (
-                  fresh[0] &&
-                  Math.abs(fresh[0].time - mark.time) <= 0.08
-                ) {
-                  sn = row.built.notes[gi]
-                  break
+              for (const built of row.layers) {
+                for (let gi = 0; gi < built.sliceGroups.length; gi++) {
+                  const g = built.sliceGroups[gi]!
+                  const fresh = g.filter((s) => !s.tieFromPrev)
+                  if (
+                    fresh[0] &&
+                    Math.abs(fresh[0].time - mark.time) <= 0.08
+                  ) {
+                    sn = built.notes[gi]
+                    break
+                  }
                 }
+                if (sn) break
               }
               if (sn) break
             }
@@ -549,36 +674,72 @@ export function StaffNotation({
           }
 
           for (const row of staves) {
-            row.built.sliceGroups.forEach((g, gi) => {
-              const sn = row.built.notes[gi]!
-              g.forEach((slice, ki) => {
-                const key = `${row.clef}:${slice.id}`
-                const prev = placed.get(key)
-                if (slice.tieFromPrev && prev) {
-                  rowTies.push({
-                    first: prev.sn,
-                    last: sn,
-                    fi: prev.index,
-                    li: ki,
+            for (const built of row.layers) {
+              built.sliceGroups.forEach((g, gi) => {
+                const sn = built.notes[gi]!
+                g.forEach((slice, ki) => {
+                  const key = `${row.clef}:${slice.id}`
+                  const prev = placed.get(key)
+                  if (slice.tieFromPrev && prev) {
+                    // Full same-system StaveTie
+                    rowTies.push({
+                      first: prev.sn,
+                      last: sn,
+                      fi: prev.index,
+                      li: ki,
+                    })
+                    fullTieFirstNotes.add(prev.sn)
+                  } else if (
+                    shouldDrawPartialInbound(slice.tieFromPrev, !!prev)
+                  ) {
+                    // Cross-system inbound partial (partner was on prior system)
+                    rowTies.push({
+                      first: null,
+                      last: sn,
+                      fi: ki,
+                      li: ki,
+                    })
+                  }
+                  placed.set(key, {
+                    sn,
+                    index: ki,
+                    measure: barNum,
+                    tieToNext: slice.tieToNext,
                   })
-                }
-                placed.set(key, { sn, index: ki, measure: barNum })
+                })
               })
-            })
+            }
           }
 
         })
 
+        // End of system: outbound partials for ties that continue onto the next line
+        for (const entry of placed.values()) {
+          if (
+            shouldDrawPartialOutbound(
+              entry.tieToNext,
+              fullTieFirstNotes.has(entry.sn),
+            )
+          ) {
+            rowTies.push({
+              first: entry.sn,
+              last: null,
+              fi: entry.index,
+              li: entry.index,
+            })
+          }
+        }
+
         for (const t of rowTies) {
           try {
-            new StaveTie({
+            const tie = new StaveTie({
               first_note: t.first,
               last_note: t.last,
               first_indices: [t.fi],
               last_indices: [t.li],
             })
-              .setContext(ctx)
-              .draw()
+            tie.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
+            tie.setContext(ctx).draw()
           } catch {
             /* ignore tie draw failures */
           }
@@ -588,11 +749,18 @@ export function StaffNotation({
       // Place each system at its scrolled Y. Constant translate(-pad) only
       // reveals the viewport — scrollPos changes never remap local indices.
       for (const lineIdx of lineIndices) {
-        placed.clear()
         const start = lineIdx * BPS + 1
         const y0 = pad + (lineIdx - scrollPos) * stride
-        if (y0 > height || y0 + systemH < 0) continue
+        if (y0 > height || y0 + systemH < 0) {
+          // Still clear so a skipped offscreen system doesn't leak partners
+          placed.clear()
+          fullTieFirstNotes.clear()
+          continue
+        }
         drawSystem(start, y0)
+        // Clear after outbound partials so the next system uses inbound partials
+        placed.clear()
+        fullTieFirstNotes.clear()
       }
 
       el.style.transform = `translateY(${-pad}px)`
@@ -608,7 +776,6 @@ export function StaffNotation({
           bottom: s.bottom - pad,
         })),
         marginLeft,
-        barW,
         scrollY: scrollPos * stride,
       }
     }
@@ -617,7 +784,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, secPerQuarter, measureCount, selection, keySignature, BPS, themeEpoch, polarity])
+  }, [notes, measure, activeNotes, nowSec, measureCount, selection, keySignature, BPS, measures, themeEpoch, polarity])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
@@ -633,10 +800,20 @@ export function StaffNotation({
     const rect = box.getBoundingClientRect()
     const x = e.clientX - rect.left - lay.marginLeft
     const y = e.clientY - rect.top
-    if (x < 0 || x > lay.barW * BPS) return
     const sys = lay.systems.find((s) => y >= s.top && y < s.bottom)
     if (!sys) return
-    const bi = Math.min(BPS - 1, Math.floor(x / lay.barW))
+    const widths = sys.barWidths
+    const totalW = widths.reduce((a, w) => a + w, 0)
+    if (x < 0 || x > totalW) return
+    let acc = 0
+    let bi = widths.length - 1
+    for (let i = 0; i < widths.length; i++) {
+      acc += widths[i]!
+      if (x < acc) {
+        bi = i
+        break
+      }
+    }
     const bar = sys.start + bi
     if (bar < 1 || bar > measureCount) return
     onMeasurePointer(bar, e.shiftKey)
