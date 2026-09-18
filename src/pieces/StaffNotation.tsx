@@ -28,6 +28,11 @@ import {
   type VexDuration,
 } from './midiToVex'
 import {
+  isPureTieContinuation,
+  shouldDrawPartialInbound,
+  shouldDrawPartialOutbound,
+} from './staffTies'
+import {
   sheetColorsForPolarity,
   type SheetPolarity,
 } from '../settings/colorProfile'
@@ -444,8 +449,10 @@ export function StaffNotation({
       type TieKey = string
       const placed = new Map<
         TieKey,
-        { sn: StaveNote; index: number; measure: number }
+        { sn: StaveNote; index: number; measure: number; tieToNext: boolean }
       >()
+      /** StaveNotes that already got a full same-system outbound StaveTie. */
+      const fullTieFirstNotes = new Set<StaveNote>()
 
       const drawSystem = (start: number, y0: number) => {
         const bars = Array.from(
@@ -477,8 +484,8 @@ export function StaffNotation({
         const bassY =
           trebleY + (showTreble ? STAVE_H + CLEF_GAP : 0)
         const rowTies: {
-          first: StaveNote
-          last: StaveNote
+          first: StaveNote | null
+          last: StaveNote | null
           fi: number
           li: number
         }[] = []
@@ -488,7 +495,9 @@ export function StaffNotation({
           if (barNum > measureCount) return
           const x = barX(bi)
           // Floor formatter room so dense bars aren't given ~50px.
-          const inner = Math.max(80, barWidths[bi]! - (bi === 0 ? 40 : 18))
+          // Non-clef bars: ~10px more left inset so barline-tied chords aren't
+          // glued to the previous bar's last chord (Another Love m49→m50).
+          const leftReserve = bi === 0 ? 40 : 28
 
           type StaveRow = {
             clef: 'treble' | 'bass'
@@ -550,11 +559,36 @@ export function StaffNotation({
             staves.push({ clef: 'bass', stave, layers })
           }
 
+          // Extra inset when the first sounding tickable is a pure tie continuation
+          // (keeps equal bar widths; only shrinks formatter room).
+          let leadingTieCont = false
+          outer: for (const row of staves) {
+            for (const built of row.layers) {
+              for (let gi = 0; gi < built.sliceGroups.length; gi++) {
+                const g = built.sliceGroups[gi]!
+                if (!g.length) continue // rest
+                leadingTieCont = isPureTieContinuation(g)
+                break outer
+              }
+            }
+          }
+          const inner = Math.max(
+            80,
+            barWidths[bi]! - (leftReserve + (leadingTieCont ? 10 : 0)),
+          )
+
           const barBeats = Math.max(1, barInfo.beatsPerBar)
           const voices: Voice[] = []
           const voiceStaves: Stave[] = []
+          /** StaveNotes that are pure tie continuations — exclude from beams. */
+          const continuationNotes = new Set<StaveNote>()
           for (const row of staves) {
             for (const built of row.layers) {
+              built.sliceGroups.forEach((g, gi) => {
+                if (isPureTieContinuation(g)) {
+                  continuationNotes.add(built.notes[gi]!)
+                }
+              })
               const voice = new Voice({
                 num_beats: barBeats,
                 beat_value: 4,
@@ -569,11 +603,20 @@ export function StaffNotation({
             // Beam consecutive 8ths/16ths/… within each beat group (VexFlow
             // defaults for the bar's time signature). Create before format so
             // flags are suppressed; draw after voices so beams sit on top.
+            // Skip pure tie-continuation chords so they aren't beamed into the
+            // next eighths (squashed look at barlines like Another Love m49→m50).
             const timeSig = `${barBeats}/4`
             const beamGroups = Beam.getDefaultBeamGroups(timeSig)
             const beams: Beam[] = []
             for (const voice of voices) {
-              beams.push(...Beam.applyAndGetBeams(voice, undefined, beamGroups))
+              const beamable = voice
+                .getTickables()
+                .filter((t) => !continuationNotes.has(t as StaveNote))
+              beams.push(
+                ...Beam.generateBeams(beamable as StaveNote[], {
+                  groups: beamGroups,
+                }),
+              )
             }
 
             const fmt = new Formatter()
@@ -632,14 +675,31 @@ export function StaffNotation({
                   const key = `${row.clef}:${slice.id}`
                   const prev = placed.get(key)
                   if (slice.tieFromPrev && prev) {
+                    // Full same-system StaveTie
                     rowTies.push({
                       first: prev.sn,
                       last: sn,
                       fi: prev.index,
                       li: ki,
                     })
+                    fullTieFirstNotes.add(prev.sn)
+                  } else if (
+                    shouldDrawPartialInbound(slice.tieFromPrev, !!prev)
+                  ) {
+                    // Cross-system inbound partial (partner was on prior system)
+                    rowTies.push({
+                      first: null,
+                      last: sn,
+                      fi: ki,
+                      li: ki,
+                    })
                   }
-                  placed.set(key, { sn, index: ki, measure: barNum })
+                  placed.set(key, {
+                    sn,
+                    index: ki,
+                    measure: barNum,
+                    tieToNext: slice.tieToNext,
+                  })
                 })
               })
             }
@@ -647,16 +707,33 @@ export function StaffNotation({
 
         })
 
+        // End of system: outbound partials for ties that continue onto the next line
+        for (const entry of placed.values()) {
+          if (
+            shouldDrawPartialOutbound(
+              entry.tieToNext,
+              fullTieFirstNotes.has(entry.sn),
+            )
+          ) {
+            rowTies.push({
+              first: entry.sn,
+              last: null,
+              fi: entry.index,
+              li: entry.index,
+            })
+          }
+        }
+
         for (const t of rowTies) {
           try {
-            new StaveTie({
+            const tie = new StaveTie({
               first_note: t.first,
               last_note: t.last,
               first_indices: [t.fi],
               last_indices: [t.li],
             })
-              .setContext(ctx)
-              .draw()
+            tie.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
+            tie.setContext(ctx).draw()
           } catch {
             /* ignore tie draw failures */
           }
@@ -666,11 +743,18 @@ export function StaffNotation({
       // Place each system at its scrolled Y. Constant translate(-pad) only
       // reveals the viewport — scrollPos changes never remap local indices.
       for (const lineIdx of lineIndices) {
-        placed.clear()
         const start = lineIdx * BPS + 1
         const y0 = pad + (lineIdx - scrollPos) * stride
-        if (y0 > height || y0 + systemH < 0) continue
+        if (y0 > height || y0 + systemH < 0) {
+          // Still clear so a skipped offscreen system doesn't leak partners
+          placed.clear()
+          fullTieFirstNotes.clear()
+          continue
+        }
         drawSystem(start, y0)
+        // Clear after outbound partials so the next system uses inbound partials
+        placed.clear()
+        fullTieFirstNotes.clear()
       }
 
       el.style.transform = `translateY(${-pad}px)`
