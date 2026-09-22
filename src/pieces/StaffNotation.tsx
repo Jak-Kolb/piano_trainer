@@ -21,6 +21,7 @@ import {
 import type { MeasureInfo, PieceNote } from './types'
 import { accidentalForMeasure } from './keySig'
 import { dynamicMarksForPiece } from './dynamics'
+import { barQuarters, timeSigLabel, timeSigToDraw } from './meter'
 import {
   durationToVex,
   midiToVexKey,
@@ -82,8 +83,6 @@ interface Props {
   onMeasureScroll?: (dir: 1 | -1) => void
   /** Playhead time (sec) for smooth line glide during demo / practice. */
   nowSec?: number
-  /** VexFlow key, e.g. "G" or "Em". */
-  keySignature?: string
   /** Bars drawn per staff line (from time signature). */
   barsPerLine?: number
   /** Beats per bar from the piece time signature (default 4) — first bar. */
@@ -175,9 +174,9 @@ type Built = {
  * and drop the eighths (Another Love mm.31–33 style).
  */
 function partitionClefSlices(inBar: NoteSlice[], measureInfo: MeasureInfo): NoteSlice[][] {
-  const barBeats = measureInfo.beatsPerBar
-  const spq = measureInfo.durationSec / barBeats
-  const longThresh = spq * Math.max(2, barBeats * 0.7) // ~whole-bar or long hold
+  const barQ = barQuarters(measureInfo)
+  const spq = measureInfo.durationSec / barQ
+  const longThresh = spq * Math.max(2, barQ * 0.7) // ~whole-bar or long hold
   const longs = inBar.filter(s => s.duration >= longThresh - 1e-6)
   const shorts = inBar.filter(s => s.duration < longThresh - 1e-6)
   if (!longs.length || !shorts.length) return [inBar]
@@ -201,7 +200,6 @@ function buildVoiceNotes(
   clef: 'treble' | 'bass',
   activeNotes: PieceNote[],
   measureInfo: MeasureInfo,
-  keySignature: string,
   colors: ReturnType<typeof sheetColorsForPolarity>,
   /** Shared across voices on this clef so accidentals persist for the bar. */
   measureAccidentals: Map<string, string>,
@@ -209,7 +207,9 @@ function buildVoiceNotes(
   const groups = groupSlices(inBar)
   const notes: StaveNote[] = []
   const sliceGroups: NoteSlice[][] = []
-  const barBeats = Math.max(1, measureInfo.beatsPerBar)
+  const keySignature = measureInfo.keySignature
+  // Bar length in quarter notes (6/8 → 3): durations below are in quarters.
+  const barBeats = Math.max(0.25, barQuarters(measureInfo))
   // Local SPQ for this bar — critical when tempo changed since the first bar.
   const spq = Math.max(0.01, measureInfo.durationSec / barBeats)
   const barStart = measureInfo.startSec
@@ -295,6 +295,28 @@ function buildVoiceNotes(
   return { notes, sliceGroups }
 }
 
+const noteStartCache = new Map<string, number>()
+
+/** Where notes start on a stave carrying these begin modifiers (cached). */
+function noteStartOffset(
+  clef: 'treble' | 'bass' | null,
+  key: string | null,
+  cancel: string | null,
+  time: string | null,
+): number {
+  const id = `${clef}|${key}|${cancel}|${time}`
+  let x = noteStartCache.get(id)
+  if (x === undefined) {
+    const stave = new Stave(0, 0, 400)
+    if (clef) stave.addClef(clef)
+    if (key) stave.addKeySignature(key, cancel ?? undefined)
+    if (time) stave.addTimeSignature(time)
+    x = stave.getNoteStartX()
+    noteStartCache.set(id, x)
+  }
+  return x
+}
+
 function inSelection(
   bar: number,
   selection: { start: number; end: number } | null,
@@ -315,7 +337,6 @@ export function StaffNotation({
   onMeasurePointer,
   onMeasureScroll,
   nowSec,
-  keySignature = 'C',
   barsPerLine = 6,
   beatsPerBar: _beatsPerBar = 4,
   measures,
@@ -442,21 +463,67 @@ export function StaffNotation({
 
             const marginLeft = 8
       const usable = width - marginLeft - 8
+
+      /** Key / time signatures printed at the start of this bar. */
+      const beginModifiers = (barNum: number, lineStart: boolean) => {
+        const info = measureInfoAt(measures, barNum)
+        const prevKey =
+          barNum > 1
+            ? measureInfoAt(measures, barNum - 1).keySignature
+            : info.keySignature
+        const changed = info.keySignature !== prevKey
+        const key =
+          changed || (lineStart && info.keySignature !== 'C')
+            ? info.keySignature
+            : null
+        return {
+          key,
+          cancel: changed ? prevKey : null,
+          time: timeSigToDraw(measures, barNum),
+        }
+      }
+      /** Extra room beyond the usual line-start clef + key (CLEF_PAD). */
+      const modifierPad = (barNum: number, lineStart: boolean): number => {
+        const mods = beginModifiers(barNum, lineStart)
+        const lineKey = measureInfoAt(measures, barNum).keySignature
+        let pad = 0
+        for (const clef of ['treble', 'bass'] as const) {
+          const full = noteStartOffset(
+            lineStart ? clef : null,
+            mods.key,
+            mods.cancel,
+            mods.time,
+          )
+          const base = lineStart
+            ? noteStartOffset(clef, lineKey !== 'C' ? lineKey : null, null, null)
+            : noteStartOffset(null, null, null, null)
+          pad = Math.max(pad, full - base)
+        }
+        return pad
+      }
       const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
 
       // Equal *music* width per bar. First bar of each system is wider by
       // CLEF_PAD so clef + key signature don't steal space from the notes
-      // (which made the first measure look squished at the end).
+      // (which made the first measure look squished at the end). Bars that
+      // also print a time signature or a key change get that room on top.
       const NOTE_INSET = 28
       const CLEF_PAD = 52
-      const barWidthsForSystem = (start: number): number[] => {
+      const barLayoutForSystem = (
+        start: number,
+      ): { widths: number[]; pads: number[] } => {
         const n = Math.max(0, Math.min(BPS, measureCount - start + 1))
-        if (n <= 0) return []
-        const musicUsable = Math.max(n * 60, usable - CLEF_PAD)
-        const share = musicUsable / n
-        return Array.from({ length: n }, (_, i) =>
-          i === 0 ? share + CLEF_PAD : share,
+        if (n <= 0) return { widths: [], pads: [] }
+        const pads = Array.from({ length: n }, (_, i) =>
+          modifierPad(start + i, i === 0),
         )
+        const padSum = pads.reduce((a, p) => a + p, 0)
+        const musicUsable = Math.max(n * 60, usable - CLEF_PAD - padSum)
+        const share = musicUsable / n
+        return {
+          widths: pads.map((p, i) => share + p + (i === 0 ? CLEF_PAD : 0)),
+          pads,
+        }
       }
 
       type TieKey = string
@@ -472,7 +539,7 @@ export function StaffNotation({
           { length: BPS },
           (_, i) => start + i,
         )
-        const barWidths = barWidthsForSystem(start)
+        const { widths: barWidths, pads: barPads } = barLayoutForSystem(start)
         const barX = (bi: number) =>
           marginLeft + barWidths.slice(0, bi).reduce((a, w) => a + w, 0)
         systemsMeta.push({ start, top: y0, bottom: y0 + systemH, barWidths })
@@ -510,7 +577,8 @@ export function StaffNotation({
           // Floor formatter room so dense bars aren't given ~50px.
           // Non-clef bars: ~10px more left inset so barline-tied chords aren't
           // glued to the previous bar's last chord (Another Love m49→m50).
-          const leftReserve = bi === 0 ? NOTE_INSET + CLEF_PAD : NOTE_INSET
+          const leftReserve =
+            (bi === 0 ? NOTE_INSET + CLEF_PAD : NOTE_INSET) + barPads[bi]!
 
           type StaveRow = {
             clef: 'treble' | 'bass'
@@ -519,14 +587,17 @@ export function StaffNotation({
           }
           const staves: StaveRow[] = []
           const barInfo = measureInfoAt(measures, barNum)
+          const mods = beginModifiers(barNum, bi === 0)
+          const addBeginModifiers = (stave: Stave, clef: 'treble' | 'bass') => {
+            if (bi === 0) stave.addClef(clef)
+            if (mods.key) stave.addKeySignature(mods.key, mods.cancel ?? undefined)
+            if (mods.time) stave.addTimeSignature(mods.time)
+          }
 
           if (showTreble) {
             const stave = new Stave(x, trebleY, barWidths[bi]!)
+            addBeginModifiers(stave, 'treble')
             if (bi === 0) {
-              stave.addClef('treble')
-              if (keySignature && keySignature !== 'C') {
-                stave.addKeySignature(keySignature)
-              }
               // Measure number at the start of each staff line (printed-music style).
               stave.setMeasure(start)
             }
@@ -541,7 +612,6 @@ export function StaffNotation({
                 'treble',
                 activeNotes,
                 barInfo,
-                keySignature,
                 colors,
                 trebleAcc,
               ),
@@ -551,12 +621,7 @@ export function StaffNotation({
 
           if (showBass) {
             const stave = new Stave(x, bassY, barWidths[bi]!)
-            if (bi === 0) {
-              stave.addClef('bass')
-              if (keySignature && keySignature !== 'C') {
-                stave.addKeySignature(keySignature)
-              }
-            }
+            addBeginModifiers(stave, 'bass')
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
@@ -568,7 +633,6 @@ export function StaffNotation({
                 'bass',
                 activeNotes,
                 barInfo,
-                keySignature,
                 colors,
                 bassAcc,
               ),
@@ -594,7 +658,6 @@ export function StaffNotation({
             barWidths[bi]! - (leftReserve + (leadingTieCont ? 10 : 0)),
           )
 
-          const barBeats = Math.max(1, barInfo.beatsPerBar)
           const voices: Voice[] = []
           const voiceStaves: Stave[] = []
           /** StaveNotes that are pure tie continuations — exclude from beams. */
@@ -607,8 +670,8 @@ export function StaffNotation({
                 }
               })
               const voice = new Voice({
-                num_beats: barBeats,
-                beat_value: 4,
+                num_beats: barInfo.beatsPerBar,
+                beat_value: barInfo.beatUnit,
               }).setStrict(false)
               voice.addTickables(built.notes)
               voices.push(voice)
@@ -622,8 +685,7 @@ export function StaffNotation({
             // flags are suppressed; draw after voices so beams sit on top.
             // Skip pure tie-continuation chords so they aren't beamed into the
             // next eighths (squashed look at barlines like Another Love m49→m50).
-            const timeSig = `${barBeats}/4`
-            const beamGroups = Beam.getDefaultBeamGroups(timeSig)
+            const beamGroups = Beam.getDefaultBeamGroups(timeSigLabel(barInfo))
             const beams: Beam[] = []
             for (const voice of voices) {
               const beamable = voice
@@ -795,7 +857,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, measureCount, selection, keySignature, BPS, measures, themeEpoch, polarity])
+  }, [notes, measure, activeNotes, nowSec, measureCount, selection, BPS, measures, themeEpoch, polarity])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +

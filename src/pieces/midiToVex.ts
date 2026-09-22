@@ -30,36 +30,42 @@ const PC_FLAT = [
   'b',
 ] as const
 
-/** Flat-key signatures (and relative minors we might store as letter names). */
-const FLAT_KEYS = new Set([
-  'F',
-  'Bb',
-  'Eb',
-  'Ab',
-  'Db',
-  'Gb',
-  'Cb',
-  'd',
-  'g',
-  'c',
-  'f',
-  'bb',
-  'eb',
-  'ab',
+/**
+ * Flat-key signatures, major and minor (VexFlow key names) → pitch class of
+ * the relative minor's leading tone, which is written as a sharp even in a
+ * flat key (C# in F major / D minor, not Db).
+ */
+const FLAT_KEY_LEADING_TONE = new Map<string, number>([
+  ['F', 1],
+  ['Dm', 1],
+  ['Bb', 6],
+  ['Gm', 6],
+  ['Eb', 11],
+  ['Cm', 11],
+  ['Ab', 4],
+  ['Fm', 4],
+  ['Db', 9],
+  ['Bbm', 9],
+  ['Gb', 2],
+  ['Ebm', 2],
+  ['Cb', 7],
+  ['Abm', 7],
 ])
 
 export function keyPrefersFlats(keySignature: string): boolean {
-  return FLAT_KEYS.has((keySignature || 'C').trim())
+  return FLAT_KEY_LEADING_TONE.has((keySignature || 'C').trim())
 }
 
 /**
  * MIDI → VexFlow key. Spelling follows the piece key so chromatics in
- * sharp keys use sharps (A# not Bb) and flat keys use flats.
+ * sharp keys use sharps (A# not Bb) and flat keys use flats, except the
+ * relative minor's leading tone.
  */
 export function midiToVexKey(midi: number, keySignature = 'C'): string {
   const pc = ((midi % 12) + 12) % 12
   const oct = Math.floor(midi / 12) - 1
-  const names = keyPrefersFlats(keySignature) ? PC_FLAT : PC_SHARP
+  const leading = FLAT_KEY_LEADING_TONE.get((keySignature || 'C').trim())
+  const names = leading === undefined || pc === leading ? PC_SHARP : PC_FLAT
   return `${names[pc]}/${oct}`
 }
 

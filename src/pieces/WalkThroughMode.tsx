@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { InputSource } from '../input'
-import { barsPerSystem, playNotesDemo, lineStartMeasure } from './demoAudio'
+import {
+  barsPerSystem,
+  dominantBarQuarters,
+  playNotesDemo,
+  lineStartMeasure,
+} from './demoAudio'
 import { preloadPiano } from './pianoPlayer'
 import {
   canAcceptMidiStep,
@@ -85,7 +90,7 @@ export function WalkThroughMode({
 
   const step = steps[stepIdx]
   const measure = step?.[0]?.measure ?? controls.loopStartMeasure
-  const barsPerLine = barsPerSystem(parsed.beatsPerBar)
+  const barsPerLine = barsPerSystem(dominantBarQuarters(parsed.measures))
   const lineStart = lineStartMeasure(measure, barsPerLine)
   const lineEnd = lineStart + barsPerLine - 1
   const maxMeasure = Math.max(controls.loopEndMeasure, parsed.measureCount)
@@ -523,7 +528,6 @@ export function WalkThroughMode({
                 if (dir > 0) jumpNextMeasure()
                 else jumpPrevMeasure()
               }}
-              keySignature={parsed.keySignature}
               barsPerLine={barsPerLine}
               beatsPerBar={parsed.beatsPerBar}
               measures={parsed.measures}

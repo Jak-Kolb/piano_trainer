@@ -26,26 +26,58 @@ function barStartTick(
   return lo
 }
 
-function beatsPerBarAtTick(header: MidiHeader, tick: number): number {
+/** [numerator, denominator] in force at `tick`. */
+function timeSigAtTick(header: MidiHeader, tick: number): [number, number] {
   const tss = header.timeSignatures
-  if (!tss.length) return 4
-  let beats = tss[0]!.timeSignature[0] || 4
+  if (!tss.length) return [4, 4]
+  let sig = tss[0]!.timeSignature
   for (const ts of tss) {
-    if (ts.ticks <= tick) beats = ts.timeSignature[0] || 4
+    if (ts.ticks <= tick) sig = ts.timeSignature
     else break
   }
-  return Math.max(1, beats)
+  return [Math.max(1, sig[0] || 4), Math.max(1, sig[1] || 4)]
+}
+
+/** Major key with this signature → its relative minor (VexFlow names). */
+const RELATIVE_MINOR: Record<string, string> = {
+  Cb: 'Abm',
+  Gb: 'Ebm',
+  Db: 'Bbm',
+  Ab: 'Fm',
+  Eb: 'Cm',
+  Bb: 'Gm',
+  F: 'Dm',
+  C: 'Am',
+  G: 'Em',
+  D: 'Bm',
+  A: 'F#m',
+  E: 'C#m',
+  B: 'G#m',
+  'F#': 'D#m',
+  'C#': 'A#m',
+}
+
+/**
+ * VexFlow key name for a Tone key-signature event, or null if unreadable.
+ * Tone reports `key` as the *major* key with that signature even when
+ * `scale` is minor (A minor arrives as key "C", scale "minor").
+ */
+export function vexKeyName(ks: { key?: string; scale?: string }): string | null {
+  if (!ks.key || !(ks.key in RELATIVE_MINOR)) return null
+  return ks.scale === 'minor' ? RELATIVE_MINOR[ks.key]! : ks.key
 }
 
 /**
  * Build one MeasureInfo per displayed measure (index 0 = measure 1).
  * Uses Tone's ticksToMeasures / ticksToSeconds so tempo and meter changes
  * produce real wall-clock bar starts (not first-tempo * constant meter).
+ * `fallbackKey` is used when the file has no readable key signature.
  */
 export function buildMeasureTimeline(
   header: MidiHeader,
   measureCount: number,
   durationSec: number,
+  fallbackKey = 'C',
 ): MeasureInfo[] {
   const count = Math.max(1, measureCount)
   const maxTickHint = Math.max(
@@ -56,6 +88,22 @@ export function buildMeasureTimeline(
   for (let b = 0; b <= count; b++) {
     starts.push(barStartTick(header, b, maxTickHint))
   }
+  const keyChanges = header.keySignatures
+    .map((ks) => ({ ticks: ks.ticks, key: vexKeyName(ks) }))
+    .filter((k): k is { ticks: number; key: string } => k.key !== null)
+    .sort((a, b) => a.ticks - b.ticks)
+  // A key event a little after the barline still belongs to that bar.
+  const keySlack = header.ppq / 4
+  const keyAtTick = (tick: number): string => {
+    if (!keyChanges.length) return fallbackKey
+    let key = 'C'
+    for (const k of keyChanges) {
+      if (k.ticks <= tick + keySlack) key = k.key
+      else break
+    }
+    return key
+  }
+
   const measures: MeasureInfo[] = []
   for (let i = 0; i < count; i++) {
     const startTick = starts[i]!
@@ -66,10 +114,13 @@ export function buildMeasureTimeline(
     if (endSec <= startSec + 1e-6) {
       endSec = Math.max(durationSec, startSec + 0.01)
     }
+    const [beatsPerBar, beatUnit] = timeSigAtTick(header, startTick)
     measures.push({
       startSec,
       durationSec: Math.max(0.01, endSec - startSec),
-      beatsPerBar: beatsPerBarAtTick(header, startTick),
+      beatsPerBar,
+      beatUnit,
+      keySignature: keyAtTick(startTick),
     })
   }
   return measures
@@ -124,27 +175,24 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
   }
   const measureCount = Math.max(1, maxToneBar)
 
-  const measures = buildMeasureTimeline(midi.header, measureCount, durationSec)
-
-  const activeTracks = new Set(notes.map((n) => n.track))
-  const hasTwoHands = activeTracks.size >= 2
-
-  const ks = midi.header.keySignatures[0]
-  let keySignature = 'C'
-  if (ks) {
-    // Tone: key is major tonic (e.g. "G"); scale is "major" | "minor"
-    keySignature =
-      ks.scale === 'minor'
-        ? ks.key.endsWith('m')
-          ? ks.key
-          : `${ks.key}m`
-        : ks.key
-  } else {
+  let fallbackKey = 'C'
+  if (!midi.header.keySignatures.some((ks) => vexKeyName(ks))) {
     // No key meta — light heuristic so G-major songs don't stamp # on every F
     const fSharp = notes.filter((n) => ((n.midi % 12) + 12) % 12 === 6).length
     const fNat = notes.filter((n) => ((n.midi % 12) + 12) % 12 === 5).length
-    if (fSharp > 8 && fSharp > fNat * 3) keySignature = 'G'
+    if (fSharp > 8 && fSharp > fNat * 3) fallbackKey = 'G'
   }
+
+  const measures = buildMeasureTimeline(
+    midi.header,
+    measureCount,
+    durationSec,
+    fallbackKey,
+  )
+  const keySignature = measures[0]?.keySignature ?? fallbackKey
+
+  const activeTracks = new Set(notes.map((n) => n.track))
+  const hasTwoHands = activeTracks.size >= 2
 
   return {
     notes,
