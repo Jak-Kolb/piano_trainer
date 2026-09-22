@@ -44,8 +44,8 @@ describe('sliceNotesForTies', () => {
   it('uses per-measure starts (non-uniform timeline)', () => {
     // Measure 1: 0–2s (4/4), measure 2: 2–3.5s (3/4) — barline splits only.
     const measures = [
-      { startSec: 0, durationSec: 2, beatsPerBar: 4 },
-      { startSec: 2, durationSec: 1.5, beatsPerBar: 3 },
+      { startSec: 0, durationSec: 2, beatsPerBar: 4, beatUnit: 4, keySignature: 'C' },
+      { startSec: 2, durationSec: 1.5, beatsPerBar: 3, beatUnit: 4, keySignature: 'C' },
     ]
     const n: PieceNote[] = [
       { midi: 60, time: 0.1, duration: 3.2, track: 0, measure: 1, velocity: 0.7 },

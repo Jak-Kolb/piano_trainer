@@ -21,12 +21,15 @@ export function uniformMeasures(
   count: number,
   secPerQuarter: number,
   beatsPerBar = 4,
+  beatUnit = 4,
 ): MeasureInfo[] {
-  const barSec = Math.max(0.01, beatsPerBar * secPerQuarter)
+  const barSec = Math.max(0.01, ((beatsPerBar * 4) / beatUnit) * secPerQuarter)
   return Array.from({ length: Math.max(1, count) }, (_, i) => ({
     startSec: i * barSec,
     durationSec: barSec,
     beatsPerBar,
+    beatUnit,
+    keySignature: 'C',
   }))
 }
 
@@ -45,9 +48,17 @@ export function measureInfoAt(
       startSec: last.startSec + delta * last.durationSec,
       durationSec: last.durationSec,
       beatsPerBar: last.beatsPerBar,
+      beatUnit: last.beatUnit,
+      keySignature: last.keySignature,
     }
   }
-  return { startSec: idx * 2, durationSec: 2, beatsPerBar: 4 }
+  return {
+    startSec: idx * 2,
+    durationSec: 2,
+    beatsPerBar: 4,
+    beatUnit: 4,
+    keySignature: 'C',
+  }
 }
 
 /** @deprecated Prefer measureInfoAt(measures, m).startSec — constant-tempo only. */
