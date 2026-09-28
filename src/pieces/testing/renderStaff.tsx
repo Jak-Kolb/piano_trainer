@@ -9,7 +9,7 @@ import type { ParsedPiece } from '../types'
 import { drawnStaves, resetVexLog, type DrawnStave } from './vexRecorder'
 
 let shimmed = false
-function installDomShims() {
+export function installDomShims() {
   if (shimmed) return
   shimmed = true
   const g = globalThis as Record<string, unknown>

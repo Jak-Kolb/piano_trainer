@@ -15,7 +15,7 @@
  *     spell values, ties and accidentals per bar.
  */
 import { accidentalForMeasure } from './keySig'
-import { barQuarters } from './meter'
+import { barQuarters, isCompound } from './meter'
 import { midiToVexKey } from './midiToVex'
 import { resolveHands } from './parseMidi'
 import { measureInfoAt } from './tieSlices'
@@ -518,8 +518,7 @@ export function notatePiece(
     const bs = g.starts[bar - 1]!
     const be = g.starts[bar]!
     const len = be - bs
-    const compound =
-      !beatAnalysed(info) && info.beatsPerBar % 3 === 0 && info.beatsPerBar > 3
+    const compound = isCompound(info)
     const staves = { treble: [], bass: [] } as Record<Clef, NotatedVoice[]>
 
     for (const clef of CLEFS) {

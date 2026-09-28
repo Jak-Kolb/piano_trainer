@@ -6,6 +6,11 @@ export function barQuarters(m: MeasureInfo): number {
   return (m.beatsPerBar * 4) / (m.beatUnit || 4)
 }
 
+/** 6/8, 9/8, 12/8: beats are dotted quarters. */
+export function isCompound(m: MeasureInfo): boolean {
+  return (m.beatUnit || 4) >= 8 && m.beatsPerBar % 3 === 0 && m.beatsPerBar > 3
+}
+
 export function timeSigLabel(m: MeasureInfo): string {
   return `${m.beatsPerBar}/${m.beatUnit || 4}`
 }

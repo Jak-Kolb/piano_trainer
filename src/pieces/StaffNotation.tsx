@@ -26,7 +26,7 @@ import { resolveHands } from './parseMidi'
 import { measureInfoAt } from './tieSlices'
 import type { MeasureInfo, PieceNote } from './types'
 import { dynamicMarksForPiece } from './dynamics'
-import { timeSigToDraw } from './meter'
+import { isCompound, timeSigToDraw } from './meter'
 import {
   CLEFS,
   notatePiece,
@@ -56,6 +56,7 @@ import {
   sheetColorsForPolarity,
   type SheetPolarity,
 } from '../settings/colorProfile'
+import type { Grade } from './practice/grading'
 
 /** @deprecated Prefer barsPerSystem(beatsPerBar) — kept for callers. */
 export const BARS_PER_SYSTEM = 6
@@ -97,6 +98,10 @@ interface Props {
   polarity?: SheetPolarity
   /** Which bars share each staff line (changes with width and content). */
   onSystemsChange?: (systems: SystemPlan[]) => void
+  /** Fade this staff (the hand you're not practising). */
+  dimStaff?: Clef | null
+  /** Play-along result per note id, coloured on the noteheads. */
+  noteMarks?: ReadonlyMap<string, Grade>
 }
 
 function isActiveGroup(g: NotatedNote[], activeNotes: PieceNote[]): boolean {
@@ -138,10 +143,23 @@ const REST_KEYS: Record<Clef, Record<NotatedVoice['stem'], string>> = {
 /** Beam groups in ticks: per beat, half notes in x/2, dotted quarters in compound x/8. */
 function beamGroupTicks(info: MeasureInfo): number {
   if (info.beatUnit === 2) return TPQ * 2
-  if (info.beatUnit >= 8) {
-    return info.beatsPerBar % 3 === 0 && info.beatsPerBar > 3 ? (TPQ * 3) / 2 : TPQ
-  }
+  if (info.beatUnit >= 8) return isCompound(info) ? (TPQ * 3) / 2 : TPQ
   return TPQ
+}
+
+type SheetColors = ReturnType<typeof sheetColorsForPolarity>
+
+/** How to tint a voice: faded (other hand) and/or play-along results. */
+interface VoiceLook {
+  dim?: boolean
+  marks?: ReadonlyMap<string, Grade>
+}
+
+const MARK_COLOR: Record<Grade, keyof SheetColors> = {
+  good: 'good',
+  early: 'warn',
+  late: 'warn',
+  missed: 'bad',
 }
 
 /** One notated voice → VexFlow tickables, tuplets and beams for a bar. */
@@ -150,7 +168,8 @@ function buildVoice(
   clef: Clef,
   info: MeasureInfo,
   activeNotes: PieceNote[],
-  colors: ReturnType<typeof sheetColorsForPolarity>,
+  colors: SheetColors,
+  look: VoiceLook = {},
 ): Built {
   const notes: (StaveNote | GhostNote)[] = []
   const sliceGroups: NotatedNote[][] = []
@@ -190,14 +209,24 @@ function buildVoice(
     if (ev.dots > 0) Dot.buildAndAttach([sn], { all: true })
 
     const isActive = isActiveGroup(ev.notes, activeNotes)
-    sn.setStyle({
-      fillStyle: isActive ? colors.active : colors.note,
-      strokeStyle: isActive ? colors.active : colors.note,
-    })
+    const ink = isActive
+      ? colors.active
+      : look.dim
+        ? hexToRgba(colors.note, 0.32)
+        : colors.note
+    sn.setStyle({ fillStyle: ink, strokeStyle: ink })
     sn.setLedgerLineStyle({
-      strokeStyle: isActive ? colors.active : colors.ledger,
+      strokeStyle: isActive ? colors.active : look.dim ? hexToRgba(colors.ledger, 0.32) : colors.ledger,
       lineWidth: 1.25,
     })
+    if (look.marks) {
+      ev.notes.forEach((n, i) => {
+        const mark = look.marks!.get(n.id)
+        if (!mark) return
+        const c = colors[MARK_COLOR[mark]]
+        sn.setKeyStyle(i, { fillStyle: c, strokeStyle: c })
+      })
+    }
     notes.push(sn)
     sliceGroups.push(ev.notes)
   }
@@ -372,6 +401,8 @@ export function StaffNotation({
   measures,
   polarity = 'light-on-dark',
   onSystemsChange,
+  dimStaff = null,
+  noteMarks,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -633,7 +664,10 @@ export function StaffNotation({
               rest.setStyle({ fillStyle: colors.rest, strokeStyle: colors.rest })
               rest.setStave(stave).setContext(ctx).draw()
             } else {
-              layers = model.map((v) => buildVoice(v, drawnClef, barInfo, activeNotes, colors))
+              const look: VoiceLook = { dim: dimStaff === staff, marks: noteMarks }
+              layers = model.map((v) =>
+                buildVoice(v, drawnClef, barInfo, activeNotes, colors, look),
+              )
             }
             staves.push({ clef: staff, stave, layers })
           }
@@ -834,7 +868,7 @@ export function StaffNotation({
     }
 
     draw()
-  }, [notes, measure, activeNotes, selection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth])
+  }, [notes, measure, activeNotes, selection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth, dimStaff, noteMarks])
 
   // Every render (60fps during Play): just slide the drawing.
   useLayoutEffect(() => {

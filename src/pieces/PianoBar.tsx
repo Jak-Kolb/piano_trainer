@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { midiNoteLabel } from './nameChord'
+import type { HeldState } from './practice/learn'
 
 const WHITE_PC = new Set([0, 2, 4, 5, 7, 9, 11])
 const MIDDLE_C = 60
@@ -20,8 +21,16 @@ export interface ActiveKey {
 
 interface Props {
   activeKeys: ActiveKey[]
+  /** Keys you're holding: part of the step, a wrong note, or just held. */
+  held?: ReadonlyMap<number, HeldState>
   lowMidi?: number
   highMidi?: number
+}
+
+const HELD_CLASS: Record<HeldState, string> = {
+  good: 'piano-key--held-good',
+  wrong: 'piano-key--held-wrong',
+  held: 'piano-key--held',
 }
 
 function isWhite(midi: number): boolean {
@@ -56,9 +65,14 @@ function blackClass(on: boolean, hand: PianoHand | null): string {
 
 export function PianoBar({
   activeKeys,
+  held,
   lowMidi = 21,
   highMidi = 108,
 }: Props) {
+  const heldClass = (m: number) => {
+    const state = held?.get(m)
+    return state ? ` ${HELD_CLASS[state]}` : ''
+  }
   const byMidi = new Map<number, PianoHand>()
   for (const k of activeKeys) {
     const prev = byMidi.get(k.midi)
@@ -122,14 +136,14 @@ export function PianoBar({
                   ref={isMiddle ? middleRef : undefined}
                   data-midi={m}
                   style={{ width: WHITE_W, height: WHITE_H }}
-                  className={whiteClass(on, hand, isMiddle)}
+                  className={whiteClass(on, hand, isMiddle) + heldClass(m)}
                   title={
                     isMiddle
                       ? 'Middle C (C4)'
                       : `${midiNoteLabel(m)}${hand === 'right' ? ' · RH' : hand === 'left' ? ' · LH' : ''}`
                   }
                 >
-                  {(on || isMiddle) && (
+                  {(on || isMiddle || held?.get(m) === 'wrong') && (
                     <span
                       className={`piano-key-label ${
                         on || isMiddle ? 'text-on-accent' : 'text-on-accent/80'
@@ -154,10 +168,10 @@ export function PianoBar({
                   key={m}
                   data-midi={m}
                   style={{ left, width: BLACK_W, height: BLACK_H }}
-                  className={blackClass(on, hand)}
+                  className={blackClass(on, hand) + heldClass(m)}
                   title={`${midiNoteLabel(m)}${hand === 'right' ? ' · RH' : hand === 'left' ? ' · LH' : ''}`}
                 >
-                  {on && (
+                  {(on || held?.get(m) === 'wrong') && (
                     <span className="piano-key-label text-ivory">
                       {midiNoteLabel(m)}
                     </span>
@@ -181,6 +195,12 @@ export function PianoBar({
           <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-middle-c" />
           Middle C
         </span>
+        {held && (
+          <span>
+            <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-felt" />
+            Wrong note
+          </span>
+        )}
         <span className="normal-case tracking-normal">· scroll if needed</span>
       </p>
     </div>

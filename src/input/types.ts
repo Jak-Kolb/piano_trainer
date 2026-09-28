@@ -12,6 +12,15 @@ export interface MicMeter {
   status: string
 }
 
+/** One key press or release, timed on the performance.now() clock (ms). */
+export interface NoteEvent {
+  midi: number
+  on: boolean
+  /** 0–1; 0 for releases. */
+  velocity: number
+  time: number
+}
+
 export interface InputSource {
   readonly id: InputModeId
   readonly label: string
@@ -23,5 +32,7 @@ export interface InputSource {
   supportsAutomaticGrade(): boolean
   start(): Promise<void>
   onChange(listener: () => void): () => void
+  /** Individual key presses/releases with timestamps (MIDI only). */
+  onNote(listener: (e: NoteEvent) => void): () => void
   dispose(): void
 }

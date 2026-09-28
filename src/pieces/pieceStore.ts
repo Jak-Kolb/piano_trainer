@@ -1,5 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { parseMidiArrayBuffer } from './parseMidi'
+import type { PieceState } from './practice/options'
+import type { PracticeSession } from './practice/stats'
 import type { StoredPiece } from './types'
 
 interface KeysDB extends DBSchema {
@@ -7,15 +9,36 @@ interface KeysDB extends DBSchema {
     key: string
     value: StoredPiece
   }
+  /** Per-piece settings (tempo, hands, range, switches). */
+  pieceState: {
+    key: string
+    value: PieceState
+  }
+  /** Practice history. */
+  sessions: {
+    key: number
+    value: PracticeSession
+    indexes: { byPiece: string }
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<KeysDB>> | null = null
 
 function db() {
   if (!dbPromise) {
-    dbPromise = openDB<KeysDB>('keys-pieces', 1, {
-      upgrade(database) {
-        database.createObjectStore('pieces', { keyPath: 'id' })
+    dbPromise = openDB<KeysDB>('keys-pieces', 2, {
+      upgrade(database, oldVersion) {
+        if (oldVersion < 1) {
+          database.createObjectStore('pieces', { keyPath: 'id' })
+        }
+        if (oldVersion < 2) {
+          database.createObjectStore('pieceState', { keyPath: 'pieceId' })
+          const sessions = database.createObjectStore('sessions', {
+            keyPath: 'id',
+            autoIncrement: true,
+          })
+          sessions.createIndex('byPiece', 'pieceId')
+        }
       },
     })
   }
@@ -32,7 +55,15 @@ export async function getPiece(id: string): Promise<StoredPiece | undefined> {
 }
 
 export async function deletePiece(id: string): Promise<void> {
-  await (await db()).delete('pieces', id)
+  const d = await db()
+  const tx = d.transaction(['pieces', 'pieceState', 'sessions'], 'readwrite')
+  await tx.objectStore('pieces').delete(id)
+  await tx.objectStore('pieceState').delete(id)
+  const byPiece = tx.objectStore('sessions').index('byPiece')
+  for (let c = await byPiece.openCursor(id); c; c = await c.continue()) {
+    await c.delete()
+  }
+  await tx.done
 }
 
 export async function importMidiFile(file: File): Promise<StoredPiece> {
@@ -51,4 +82,25 @@ export async function importMidiFile(file: File): Promise<StoredPiece> {
   }
   await (await db()).put('pieces', piece)
   return piece
+}
+
+export async function getPieceState(pieceId: string): Promise<PieceState | undefined> {
+  return (await db()).get('pieceState', pieceId)
+}
+
+export async function savePieceState(state: PieceState): Promise<void> {
+  await (await db()).put('pieceState', state)
+}
+
+/** Sessions for one piece, or every piece when omitted. */
+export async function listSessions(pieceId?: string): Promise<PracticeSession[]> {
+  const d = await db()
+  return pieceId
+    ? d.getAllFromIndex('sessions', 'byPiece', pieceId)
+    : d.getAll('sessions')
+}
+
+/** Insert or update a session; returns its id. */
+export async function saveSession(session: PracticeSession): Promise<number> {
+  return (await db()).put('sessions', session)
 }

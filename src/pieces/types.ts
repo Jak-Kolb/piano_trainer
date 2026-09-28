@@ -63,10 +63,3 @@ export interface ParsedPiece {
    */
   measures: MeasureInfo[]
 }
-
-export interface PieceControls {
-  tempoPercent: number
-  loopStartMeasure: number
-  loopEndMeasure: number
-  hands: HandFilter
-}
