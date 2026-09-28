@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { parseMidiArrayBuffer } from './parseMidi'
-import { renderStaff } from './testing/renderStaff'
+import { mountStaff, renderStaff } from './testing/renderStaff'
 import { synthMidi, type SynthOptions } from './testing/synthMidi'
-import { barRhythm } from './testing/vexRecorder'
+import { barRhythm, vexLog } from './testing/vexRecorder'
 
 vi.mock('vexflow', async (orig) =>
   (await import('./testing/vexRecorder')).recordingVexflow(await orig()),
@@ -83,5 +83,31 @@ describe('StaffNotation keys', () => {
     expect([b3.keySig, b3.cancelKey]).toEqual(['F', 'G'])
     expect(barRhythm(3, 'treble', staves)).toEqual(['bb/4:w'])
     expect(staves.find((s) => s.bar === 2 && s.clef === 'treble')?.keySig).toBeUndefined()
+  })
+})
+
+describe('StaffNotation redraws', () => {
+  it('glides with the playhead without redrawing; redraws once when the bar changes', async () => {
+    // 12 bars of quarter notes, 4 bars per line
+    const notes = Array.from({ length: 48 }, (_, i) => [i, 1, 60 + (i % 12)] as [number, number, number])
+    const parsed = await parseMidiArrayBuffer(synthMidi({ notes: [...notes, ...withBass(12, 4)] }))
+    const staff = await mountStaff(parsed, { measure: 5, nowSec: parsed.measures[4]!.startSec })
+    const svgHost = staff.container.querySelector('.staff-frame > div') as HTMLElement
+    expect(vexLog.renderers).toBe(1)
+
+    // Play through bar 5 at 60 "frames": the drawing only slides.
+    const transforms = new Set<string>()
+    const m5 = parsed.measures[4]!
+    for (let f = 0; f < 60; f++) {
+      await staff.rerender({ nowSec: m5.startSec + (m5.durationSec * f) / 60 })
+      transforms.add(svgHost.style.transform)
+    }
+    expect(vexLog.renderers).toBe(1)
+    expect(transforms.size).toBeGreaterThan(30)
+
+    // Next bar, same line window: the current-bar highlight redraws once.
+    await staff.rerender({ measure: 6, nowSec: parsed.measures[5]!.startSec })
+    expect(vexLog.renderers).toBe(2)
+    await staff.unmount()
   })
 })

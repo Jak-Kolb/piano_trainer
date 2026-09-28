@@ -34,13 +34,24 @@ export async function renderStaff(
   parsed: ParsedPiece,
   overrides: Partial<Props> = {},
 ): Promise<DrawnStave[]> {
+  const staff = await mountStaff(parsed, overrides)
+  const staves = drawnStaves()
+  await staff.unmount()
+  return staves
+}
+
+/** Mount and keep StaffNotation for re-rendering with new props. */
+export async function mountStaff(
+  parsed: ParsedPiece,
+  overrides: Partial<Props> = {},
+) {
   installDomShims()
   resetVexLog()
   const div = document.createElement('div')
   Object.defineProperty(div, 'clientWidth', { value: 1200 })
   document.body.appendChild(div)
   const root = createRoot(div)
-  const props: Props = {
+  let props: Props = {
     notes: parsed.notes,
     measure: 1,
     activeNotes: [],
@@ -56,8 +67,17 @@ export async function renderStaff(
   await act(async () => {
     root.render(<StaffNotation {...props} />)
   })
-  const staves = drawnStaves()
-  await act(async () => root.unmount())
-  div.remove()
-  return staves
+  return {
+    container: div,
+    async rerender(next: Partial<Props>) {
+      props = { ...props, ...next }
+      await act(async () => {
+        root.render(<StaffNotation {...props} />)
+      })
+    },
+    async unmount() {
+      await act(async () => root.unmount())
+      div.remove()
+    },
+  }
 }
