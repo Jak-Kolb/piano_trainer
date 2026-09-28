@@ -678,9 +678,11 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     if (mode === 'play') {
       if (countIn) return 'Count-in…'
       if (running) {
-        const g = graderRef.current?.summary()
-        return g && g.good + g.early + g.late + g.missed > 0
-          ? `Playing · bar ${displayBar} · ${Math.round(g.accuracy * 100)}% so far`
+        // Of the notes graded so far (not the whole run)
+        let hits = 0
+        for (const g of marks.values()) if (g !== 'missed') hits++
+        return marks.size
+          ? `Playing · bar ${displayBar} · ${Math.round((hits / marks.size) * 100)}% so far`
           : `Playing · bar ${displayBar}`
       }
       return `Press Start (or Space) to play along from bar ${range ? lo : cursorBar}.`
