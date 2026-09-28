@@ -10,7 +10,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { barsPerSystem, dominantBarQuarters } from './demoAudio'
 import { parseMidiArrayBuffer } from './parseMidi'
 import { renderStaff } from './testing/renderStaff'
-import { barRhythm } from './testing/vexRecorder'
+import { barRhythm, vexLog, type DrawnStave } from './testing/vexRecorder'
+import type { ParsedPiece } from './types'
 
 vi.mock('vexflow', async (orig) =>
   (await import('./testing/vexRecorder')).recordingVexflow(await orig()),
@@ -33,10 +34,55 @@ async function load(name: string) {
   return parseMidiArrayBuffer(bytes.buffer as ArrayBuffer)
 }
 
+/** Render every line of the piece; one entry per bar and clef. */
+async function renderAll(parsed: ParsedPiece): Promise<{ staves: DrawnStave[]; tuplets: number }> {
+  const BPS = 4
+  const seen = new Map<string, DrawnStave>()
+  let tuplets = 0
+  const lines = Math.ceil(parsed.measureCount / BPS)
+  // Rendering at the first bar of line L draws lines L-2 … L+1.
+  for (let line = 1; line - 2 < lines; line += 4) {
+    const staves = await renderStaff(parsed, {
+      measure: Math.min(parsed.measureCount, 1 + BPS * line),
+      barsPerLine: BPS,
+    })
+    tuplets += vexLog.tuplets.length
+    for (const st of staves) {
+      const key = `${st.bar}:${st.clef}`
+      if (!seen.has(key)) seen.set(key, st)
+    }
+  }
+  return { staves: [...seen.values()], tuplets }
+}
+
 const durations = (rhythm: string[]) =>
   rhythm.map((v) => v.split(' ').map((n) => n.split(':').pop()).join(' '))
 
 describe('real pieces', () => {
+  for (const [label, file] of Object.entries(FILES)) {
+    it.skipIf(!has(file))(`${label}: every voice fills its bar exactly`, async () => {
+      const parsed = await load(file)
+      const { staves } = await renderAll(parsed)
+      const bars = new Set(staves.map((s) => s.bar))
+      expect(bars.size).toBe(parsed.measureCount)
+      const bad = staves.flatMap((s) =>
+        s.voices
+          .filter((v) => Math.abs(v.usedQ - v.totalQ) > 1e-6)
+          .map((v) => `bar ${s.bar} ${s.clef}: ${v.usedQ} of ${v.totalQ}`),
+      )
+      expect(bad).toEqual([])
+    }, 60_000)
+  }
+
+  it.skipIf(!has(FILES.interstellar))('Interstellar bar 45: sixteenth sextuplets', async () => {
+    const parsed = await load(FILES.interstellar)
+    const staves = await renderStaff(parsed, { measure: 45 })
+    const st = staves.find((s) => s.bar === 45 && s.clef === 'treble')!
+    expect(durations(barRhythm(45, 'treble', staves))[0]).toBe(Array(18).fill('16').join(' '))
+    expect(st.voices[0]!.usedQ).toBe(3)
+    expect(vexLog.tuplets.some((t) => t.num === 6)).toBe(true)
+  })
+
   it.skipIf(!has(FILES.pirates))('Pirates (6/8): eighth-note values and C# leading tone', async () => {
     const parsed = await load(FILES.pirates)
     const staves = await renderStaff(parsed)
