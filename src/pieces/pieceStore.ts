@@ -9,6 +9,13 @@ interface KeysDB extends DBSchema {
     key: string
     value: StoredPiece
   }
+}
+
+/**
+ * Practice data lives in its own database so the pieces database keeps
+ * its original version (older builds of the app can still open it).
+ */
+interface PracticeDB extends DBSchema {
   /** Per-piece settings (tempo, hands, range, switches). */
   pieceState: {
     key: string
@@ -23,26 +30,33 @@ interface KeysDB extends DBSchema {
 }
 
 let dbPromise: Promise<IDBPDatabase<KeysDB>> | null = null
+let practicePromise: Promise<IDBPDatabase<PracticeDB>> | null = null
 
 function db() {
   if (!dbPromise) {
-    dbPromise = openDB<KeysDB>('keys-pieces', 2, {
-      upgrade(database, oldVersion) {
-        if (oldVersion < 1) {
-          database.createObjectStore('pieces', { keyPath: 'id' })
-        }
-        if (oldVersion < 2) {
-          database.createObjectStore('pieceState', { keyPath: 'pieceId' })
-          const sessions = database.createObjectStore('sessions', {
-            keyPath: 'id',
-            autoIncrement: true,
-          })
-          sessions.createIndex('byPiece', 'pieceId')
-        }
+    dbPromise = openDB<KeysDB>('keys-pieces', 1, {
+      upgrade(database) {
+        database.createObjectStore('pieces', { keyPath: 'id' })
       },
     })
   }
   return dbPromise
+}
+
+function practiceDb() {
+  if (!practicePromise) {
+    practicePromise = openDB<PracticeDB>('keys-practice', 1, {
+      upgrade(database) {
+        database.createObjectStore('pieceState', { keyPath: 'pieceId' })
+        const sessions = database.createObjectStore('sessions', {
+          keyPath: 'id',
+          autoIncrement: true,
+        })
+        sessions.createIndex('byPiece', 'pieceId')
+      },
+    })
+  }
+  return practicePromise
 }
 
 export async function listPieces(): Promise<StoredPiece[]> {
@@ -54,10 +68,11 @@ export async function getPiece(id: string): Promise<StoredPiece | undefined> {
   return (await db()).get('pieces', id)
 }
 
+/** Delete a piece with its settings and practice history. */
 export async function deletePiece(id: string): Promise<void> {
-  const d = await db()
-  const tx = d.transaction(['pieces', 'pieceState', 'sessions'], 'readwrite')
-  await tx.objectStore('pieces').delete(id)
+  await (await db()).delete('pieces', id)
+  const p = await practiceDb()
+  const tx = p.transaction(['pieceState', 'sessions'], 'readwrite')
   await tx.objectStore('pieceState').delete(id)
   const byPiece = tx.objectStore('sessions').index('byPiece')
   for (let c = await byPiece.openCursor(id); c; c = await c.continue()) {
@@ -85,22 +100,20 @@ export async function importMidiFile(file: File): Promise<StoredPiece> {
 }
 
 export async function getPieceState(pieceId: string): Promise<PieceState | undefined> {
-  return (await db()).get('pieceState', pieceId)
+  return (await practiceDb()).get('pieceState', pieceId)
 }
 
 export async function savePieceState(state: PieceState): Promise<void> {
-  await (await db()).put('pieceState', state)
+  await (await practiceDb()).put('pieceState', state)
 }
 
 /** Sessions for one piece, or every piece when omitted. */
 export async function listSessions(pieceId?: string): Promise<PracticeSession[]> {
-  const d = await db()
-  return pieceId
-    ? d.getAllFromIndex('sessions', 'byPiece', pieceId)
-    : d.getAll('sessions')
+  const p = await practiceDb()
+  return pieceId ? p.getAllFromIndex('sessions', 'byPiece', pieceId) : p.getAll('sessions')
 }
 
 /** Insert or update a session; returns its id. */
 export async function saveSession(session: PracticeSession): Promise<number> {
-  return (await db()).put('sessions', session)
+  return (await practiceDb()).put('sessions', session)
 }
