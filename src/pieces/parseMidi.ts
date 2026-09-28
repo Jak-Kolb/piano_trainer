@@ -126,6 +126,60 @@ export function buildMeasureTimeline(
   return measures
 }
 
+/**
+ * Sustain pedal (CC64) down intervals in seconds, merged across tracks —
+ * it's one piano, so a pedal written on either hand's track holds both.
+ */
+export function pedalIntervals(midi: Midi): [number, number][] {
+  const raw: [number, number][] = []
+  for (const track of midi.tracks) {
+    const ccs = [...(track.controlChanges[64] ?? [])].sort((a, b) => a.time - b.time)
+    let downAt: number | null = null
+    for (const cc of ccs) {
+      const down = cc.value >= 0.5
+      if (down && downAt === null) downAt = cc.time
+      else if (!down && downAt !== null) {
+        raw.push([downAt, cc.time])
+        downAt = null
+      }
+    }
+    // Never lifted: holds to the end of the file.
+    if (downAt !== null) raw.push([downAt, Math.max(downAt, midi.duration)])
+  }
+  raw.sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = []
+  for (const iv of raw) {
+    const last = merged[merged.length - 1]
+    if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1])
+    else merged.push([iv[0], iv[1]])
+  }
+  return merged
+}
+
+/**
+ * Set each note's `soundEnd`: a key released while the pedal is down rings
+ * until the pedal lifts, or until the same key is struck again.
+ */
+export function applySustain(notes: PieceNote[], pedal: [number, number][]): void {
+  const nextStrike = new Map<number, number>()
+  const byTimeDesc = [...notes].sort((a, b) => b.time - a.time)
+  const next = new Map<PieceNote, number>()
+  for (const n of byTimeDesc) {
+    const later = nextStrike.get(n.midi)
+    if (later !== undefined && later > n.time) next.set(n, later)
+    nextStrike.set(n.midi, n.time)
+  }
+  for (const n of notes) {
+    const release = n.time + n.duration
+    let end = release
+    const held = pedal.find(([down, up]) => down <= release && release < up)
+    if (held) end = held[1]
+    const restrike = next.get(n)
+    if (restrike !== undefined) end = Math.min(end, Math.max(release, restrike))
+    n.soundEnd = end
+  }
+}
+
 export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiece> {
   const midi = new Midi(buf)
   const secPerQuarter =
@@ -157,6 +211,7 @@ export async function parseMidiArrayBuffer(buf: ArrayBuffer): Promise<ParsedPiec
   })
 
   notes.sort((a, b) => a.time - b.time || a.midi - b.midi)
+  applySustain(notes, pedalIntervals(midi))
 
   const durationSec =
     notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0) || midi.duration

@@ -56,8 +56,10 @@ const NOTE_NAMES = [
   'B',
 ] as const
 
-/** Keep voices free on long pieces (line/bar rarely hit this). */
-const MAX_VOICE_SEC = 1.6
+/** Safety cap so a stuck pedal can't hold voices forever. */
+const MAX_VOICE_SEC = 8
+/** Pedal tails keep the demo running this long past the last key release. */
+const MAX_TAIL_SEC = 3
 
 export function midiToNoteName(midi: number): string {
   const name = NOTE_NAMES[((midi % 12) + 12) % 12]!
@@ -92,6 +94,38 @@ async function getSampler(): Promise<Tone.Sampler> {
 
 type PartEv = { note: string; dur: number; vel: number }
 
+/**
+ * Schedule for a demo: event times from the first note, lengths from the
+ * sustain-pedal `soundEnd`, all scaled by tempo. `endSec` is in piece time.
+ */
+export function demoEvents(
+  notes: PieceNote[],
+  tempoPercent: number,
+): { events: Array<{ time: number } & PartEv>; originSec: number; endSec: number } {
+  const tempoFactor = Math.max(0.25, tempoPercent / 100)
+  const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
+  const originSec = sorted[0]?.time ?? 0
+  const lastRelease = sorted.reduce(
+    (m, n) => Math.max(m, n.time + n.duration),
+    originSec,
+  )
+  const lastSound = sorted.reduce(
+    (m, n) => Math.max(m, n.soundEnd ?? n.time + n.duration),
+    lastRelease,
+  )
+  const endSec = Math.min(lastSound, lastRelease + MAX_TAIL_SEC) + 0.15
+  const events = sorted.map((n) => {
+    const sounding = (n.soundEnd ?? n.time + n.duration) - n.time
+    return {
+      time: (n.time - originSec) / tempoFactor,
+      note: midiToNoteName(n.midi),
+      dur: Math.min(MAX_VOICE_SEC, Math.max(0.08, sounding / tempoFactor)),
+      vel: velocityToGain(n.velocity ?? 0.7),
+    }
+  })
+  return { events, originSec, endSec }
+}
+
 /** Schedule piano notes; returns stop(). Times are piece seconds. */
 export async function playPianoNotes(
   notes: PieceNote[],
@@ -113,31 +147,13 @@ export async function playPianoNotes(
   Tone.Transport.seconds = 0
   s.releaseAll()
 
-  const tempoFactor = Math.max(0.25, tempoPercent / 100)
-  const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
-  const originSec = sorted[0]?.time ?? 0
-  const endSec =
-    sorted.reduce((m, n) => Math.max(m, n.time + n.duration), originSec) + 0.15
+  const { events, originSec, endSec } = demoEvents(notes, tempoPercent)
 
   // Whole-demo level from the opening dynamic (mp song plays quieter than mf)
+  const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
   const openLabel = velocityToDynamic(meanVelocity(sorted.slice(0, 12)))
   const baseDb = s.volume.value
   s.volume.value = dynamicToDb(openLabel)
-
-  const events: Array<{ time: number } & PartEv> = sorted.map((n) => {
-    const t = (n.time - originSec) / tempoFactor
-    const dur = Math.min(
-      MAX_VOICE_SEC,
-      Math.max(0.08, n.duration / tempoFactor),
-    )
-    const vel = velocityToGain(n.velocity ?? 0.7)
-    return {
-      time: t,
-      note: midiToNoteName(n.midi),
-      dur,
-      vel,
-    }
-  })
 
   // Tone.Part is the same voice engine as one-shot triggers, but cancels cleanly
   // and doesn't dump thousands of raw AudioParam events in one sync loop.
