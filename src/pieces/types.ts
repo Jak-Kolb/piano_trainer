@@ -11,6 +11,11 @@ export interface PieceNote {
   measure: number
   /** Note-on velocity 0–1 from the MIDI file (dynamics). */
   velocity: number
+  /**
+   * When the note stops sounding (sec), after the sustain pedal holds it
+   * past the key release. Playback only; notation uses `duration`.
+   */
+  soundEnd?: number
 }
 
 export interface StoredPiece {

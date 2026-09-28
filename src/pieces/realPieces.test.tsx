@@ -116,6 +116,14 @@ describe('real pieces', () => {
     expect(at(2)?.timeSig).toBeUndefined()
   })
 
+  for (const file of [FILES.interstellar, FILES.windyHill]) {
+    it.skipIf(!has(file))(`${file}: the sustain pedal holds notes in playback`, async () => {
+      const parsed = await load(file)
+      const held = parsed.notes.filter((n) => n.soundEnd! > n.time + n.duration + 0.05)
+      expect(held.length).toBeGreaterThan(parsed.notes.length / 4)
+    })
+  }
+
   it.skipIf(!has(FILES.jeTeLaisserai))('Je Te Laisserai: D major, 3/4', async () => {
     const parsed = await load(FILES.jeTeLaisserai)
     const staves = await renderStaff(parsed)
