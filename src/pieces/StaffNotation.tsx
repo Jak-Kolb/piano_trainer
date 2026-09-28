@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react'
 import {
   Accidental,
   Barline,
@@ -296,11 +303,16 @@ export function StaffNotation({
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
+  /** Last drawing: systems in SVG coordinates, and how to scroll them. */
   const layout = useRef<{
     systems: { start: number; top: number; bottom: number; barWidths: number[] }[]
     marginLeft: number
-    scrollY: number
+    pad: number
+    stride: number
+    baseLine: number
   } | null>(null)
+  /** Current translateY offset of the drawing (px), for click mapping. */
+  const offsetRef = useRef(0)
   const scrollAccum = useRef(0)
   const onMeasureScrollRef = useRef(onMeasureScroll)
   onMeasureScrollRef.current = onMeasureScroll
@@ -320,6 +332,32 @@ export function StaffNotation({
     () => notatePiece(notes, measures, measureCount, staffOf),
     [notes, measures, measureCount, staffOf],
   )
+  const hands = useMemo(() => resolveHands(notes), [notes])
+  // One mark per real dynamic change in the piece (not per staff line)
+  const pieceDynMarks = useMemo(() => dynamicMarksForPiece(notes), [notes])
+
+  // One observer for the component's life; redraw only when the width changes.
+  const [boxWidth, setBoxWidth] = useState(0)
+  useLayoutEffect(() => {
+    const box = wrap.current
+    if (!box) return
+    const read = () => setBoxWidth(Math.floor(box.clientWidth))
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(box)
+    return () => ro.disconnect()
+  }, [])
+
+  // Playhead → continuous line position. Only its integer part (which
+  // systems are on the page) needs a redraw; the fraction is a CSS glide.
+  const playInfo = measureInfoAt(measures, measure)
+  const tPlay = nowSec ?? activeNotes[0]?.time ?? playInfo.startSec
+  const beatFrac = Math.min(
+    0.999,
+    Math.max(0, (tPlay - playInfo.startSec) / Math.max(0.01, playInfo.durationSec)),
+  )
+  const scrollPos = lineScrollPos(measure, beatFrac, BPS)
+  const baseLine = Math.max(0, Math.floor(scrollPos))
 
   useEffect(() => {
     const el = wrap.current
@@ -344,39 +382,25 @@ export function StaffNotation({
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
-  useEffect(() => {
+  // Layout effects so a redraw and its matching scroll offset land in the
+  // same frame (no one-frame jump when the line window advances).
+  useLayoutEffect(() => {
     const el = host.current
     const box = wrap.current
     if (!el || !box) return
+    // The width observer is about to report the real width; draw once then.
+    if (!boxWidth && box.clientWidth) return
 
     const draw = () => {
       el.innerHTML = ''
-      const width = Math.max(640, Math.floor(box.clientWidth) || 900)
-      const hands = resolveHands(notes)
+      const width = Math.max(640, boxWidth || 900)
       const isTrebleNote = (n: PieceNote) => staffOf(n) === 'treble'
       const isBassNote = (n: PieceNote) => staffOf(n) === 'bass'
 
       void _beatsPerBar
 
-      // One mark per real dynamic change in the piece (not per staff line)
-      const pieceDynMarks = dynamicMarksForPiece(notes)
-
-      const playInfo = measureInfoAt(measures, measure)
-      const barStart = playInfo.startSec
-      const barDur = Math.max(0.01, playInfo.durationSec)
-      const tPlay =
-        nowSec ??
-        activeNotes[0]?.time ??
-        barStart
-      const beatFrac = Math.min(
-        0.999,
-        Math.max(0, (tPlay - barStart) / barDur),
-      )
-      const scrollPos = lineScrollPos(measure, beatFrac, BPS)
-
-      // Visible systems in absolute line-index space (no local remapping —
-      // remapping + CSS transition caused snaps on every handoff after 1→2).
-      const baseLine = Math.max(0, Math.floor(scrollPos))
+      // Systems for lines baseLine-1 … baseLine+2, laid out relative to
+      // baseLine; the fractional scroll is applied as a transform.
       const lineIndices: number[] = []
       for (let i = -1; i <= 2; i++) {
         const li = baseLine + i
@@ -750,41 +774,39 @@ export function StaffNotation({
       // reveals the viewport — scrollPos changes never remap local indices.
       for (const lineIdx of lineIndices) {
         const start = lineIdx * BPS + 1
-        const y0 = pad + (lineIdx - scrollPos) * stride
-        if (y0 > height || y0 + systemH < 0) {
-          // Still clear so a skipped offscreen system doesn't leak partners
-          placed.clear()
-          fullTieFirstNotes.clear()
-          continue
-        }
+        const y0 = pad + (lineIdx - baseLine) * stride
         drawSystem(start, y0)
         // Clear after outbound partials so the next system uses inbound partials
         placed.clear()
         fullTieFirstNotes.clear()
       }
 
-      el.style.transform = `translateY(${-pad}px)`
       el.style.transition = 'none'
-      el.style.willChange = 'auto'
+      el.style.willChange = 'transform'
       box.style.height = `${viewH}px`
       box.style.overflow = 'hidden'
 
       layout.current = {
-        systems: systemsMeta.map((s) => ({
-          ...s,
-          top: s.top - pad,
-          bottom: s.bottom - pad,
-        })),
+        systems: systemsMeta,
         marginLeft,
-        scrollY: scrollPos * stride,
+        pad,
+        stride,
+        baseLine,
       }
     }
 
     draw()
-    const ro = new ResizeObserver(() => draw())
-    ro.observe(box)
-    return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, measureCount, selection, BPS, measures, themeEpoch, polarity, score, staffOf])
+  }, [notes, measure, activeNotes, measureCount, selection, BPS, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, boxWidth, baseLine])
+
+  // Every render (60fps during Play): just slide the drawing.
+  useLayoutEffect(() => {
+    const lay = layout.current
+    const el = host.current
+    if (!lay || !el) return
+    const offset = lay.pad + (scrollPos - lay.baseLine) * lay.stride
+    offsetRef.current = offset
+    el.style.transform = `translateY(${-offset}px)`
+  })
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
@@ -799,7 +821,7 @@ export function StaffNotation({
     if (!lay || !box) return
     const rect = box.getBoundingClientRect()
     const x = e.clientX - rect.left - lay.marginLeft
-    const y = e.clientY - rect.top
+    const y = e.clientY - rect.top + offsetRef.current
     const sys = lay.systems.find((s) => y >= s.top && y < s.bottom)
     if (!sys) return
     const widths = sys.barWidths
@@ -839,7 +861,7 @@ export function StaffNotation({
         {' · '}playing {measure}
         {selLabel ?? ''}
         {' · '}
-        {resolveHands(notes) ? 'tracks→hands' : 'pitch→clef'} · click /
+        {hands ? 'tracks→hands' : 'pitch→clef'} · click /
         shift-click · scroll · lines glide
       </p>
     </div>
