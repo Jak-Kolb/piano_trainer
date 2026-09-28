@@ -283,24 +283,6 @@ export function resolveHands(
   return { rh: top[0]!.track, lh: top[1]!.track }
 }
 
-export function filterNotes(
-  notes: PieceNote[],
-  hands: 'both' | 'right' | 'left',
-  hasTwoHands: boolean,
-  loopStart: number,
-  loopEnd: number,
-): PieceNote[] {
-  const inLoop = notes.filter(
-    (n) => n.measure >= loopStart && n.measure <= loopEnd,
-  )
-  if (!hasTwoHands || hands === 'both') return inLoop
-  const pair = resolveHands(inLoop)
-  if (!pair) return inLoop
-  return inLoop.filter((n) =>
-    hands === 'right' ? n.track === pair.rh : n.track === pair.lh,
-  )
-}
-
 /**
  * Group notes that start together into one step (chords / both hands).
  */
