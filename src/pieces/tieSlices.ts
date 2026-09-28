@@ -1,37 +1,4 @@
-import type { MeasureInfo, PieceNote } from './types'
-
-export interface NoteSlice {
-  /** Stable id for the underlying MIDI note (for tie pairing). */
-  id: string
-  midi: number
-  track: number
-  measure: number
-  /** Absolute start time of this visual slice */
-  time: number
-  duration: number
-  tieFromPrev: boolean
-  tieToNext: boolean
-  /** Original MIDI note onset (for active-step matching). */
-  sourceTime: number
-  velocity: number
-}
-
-/** Uniform timeline helper for tests / fallbacks (constant tempo + meter). */
-export function uniformMeasures(
-  count: number,
-  secPerQuarter: number,
-  beatsPerBar = 4,
-  beatUnit = 4,
-): MeasureInfo[] {
-  const barSec = Math.max(0.01, ((beatsPerBar * 4) / beatUnit) * secPerQuarter)
-  return Array.from({ length: Math.max(1, count) }, (_, i) => ({
-    startSec: i * barSec,
-    durationSec: barSec,
-    beatsPerBar,
-    beatUnit,
-    keySignature: 'C',
-  }))
-}
+import type { MeasureInfo } from './types'
 
 export function measureInfoAt(
   measures: MeasureInfo[],
@@ -68,58 +35,4 @@ export function barStartSec(
   beatsPerBar = 4,
 ): number {
   return (Math.max(1, measure) - 1) * beatsPerBar * secPerQuarter
-}
-
-/**
- * Split sustained MIDI notes only at real barlines from the measure timeline
- * so the sheet can draw ties across measures. Do not cut mid-bar — a ~full-bar
- * sustain should stay one slice (whole note), even in even meters.
- */
-export function sliceNotesForTies(
-  notes: PieceNote[],
-  measures: MeasureInfo[],
-): NoteSlice[] {
-  const out: NoteSlice[] = []
-
-  for (const n of notes) {
-    const id = `${n.track}:${n.midi}:${n.time.toFixed(4)}`
-    const end = n.time + n.duration
-    let t = n.time
-    let measure = n.measure
-
-    while (t < end - 0.02) {
-      const info = measureInfoAt(measures, measure)
-      const start = info.startSec
-      const nextBar = start + info.durationSec
-      // Only structural split is the next barline.
-      const cut = nextBar
-      const sliceEnd = Math.min(end, cut)
-      const dur = sliceEnd - t
-      if (dur > 0.02) {
-        out.push({
-          id,
-          midi: n.midi,
-          track: n.track,
-          measure,
-          time: t,
-          duration: dur,
-          tieFromPrev: t > n.time + 0.02,
-          tieToNext: sliceEnd < end - 0.02,
-          sourceTime: n.time,
-          velocity: n.velocity,
-        })
-      }
-      t = sliceEnd
-      if (t >= nextBar - 0.01) measure += 1
-    }
-  }
-
-  return out
-}
-
-export function slicesInMeasure(
-  slices: NoteSlice[],
-  measure: number,
-): NoteSlice[] {
-  return slices.filter((s) => s.measure === measure)
 }

@@ -1,33 +1,33 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   Accidental,
   Barline,
   Beam,
   Dot,
   Formatter,
+  GhostNote,
   Renderer,
   Stave,
   StaveNote,
   StaveTie,
+  Stem,
+  Tuplet,
   Voice,
 } from 'vexflow'
 import { resolveHands } from './parseMidi'
-import {
-  measureInfoAt,
-  sliceNotesForTies,
-  slicesInMeasure,
-  type NoteSlice,
-} from './tieSlices'
+import { measureInfoAt } from './tieSlices'
 import type { MeasureInfo, PieceNote } from './types'
-import { accidentalForMeasure } from './keySig'
 import { dynamicMarksForPiece } from './dynamics'
-import { barQuarters, timeSigLabel, timeSigToDraw } from './meter'
+import { timeSigToDraw } from './meter'
 import {
-  durationToVex,
-  midiToVexKey,
-  restDurationsForBeats,
-  type VexDuration,
-} from './midiToVex'
+  notatePiece,
+  staffAssigner,
+  TPQ,
+  type Clef,
+  type NotatedEvent,
+  type NotatedNote,
+  type NotatedVoice,
+} from './notate'
 import {
   isPureTieContinuation,
   shouldDrawPartialInbound,
@@ -96,26 +96,7 @@ interface Props {
   polarity?: SheetPolarity
 }
 
-function groupSlices(pool: NoteSlice[], windowSec = 0.12): NoteSlice[][] {
-  if (!pool.length) return []
-  const sorted = [...pool].sort((a, b) => a.time - b.time || a.midi - b.midi)
-  const groups: NoteSlice[][] = []
-  let cur: NoteSlice[] = [sorted[0]!]
-  let anchor = sorted[0]!.time
-  for (let i = 1; i < sorted.length; i++) {
-    const n = sorted[i]!
-    if (n.time - anchor <= windowSec) cur.push(n)
-    else {
-      groups.push(cur)
-      cur = [n]
-      anchor = n.time
-    }
-  }
-  groups.push(cur)
-  return groups
-}
-
-function isActiveGroup(g: NoteSlice[], activeNotes: PieceNote[]): boolean {
+function isActiveGroup(g: NotatedNote[], activeNotes: PieceNote[]): boolean {
   if (!activeNotes.length || !g.length) return false
   // Active = this slice group is part of the current step's onset.
   // Hands are split across staves, so match a non-empty subset of the step
@@ -128,30 +109,6 @@ function isActiveGroup(g: NoteSlice[], activeNotes: PieceNote[]): boolean {
   return fresh.every((s) => need.has(s.midi))
 }
 
-
-/** VexFlow only counts dots in timing when duration is e.g. "qd" / "qdr". */
-function vexDurationString(dur: VexDuration, rest: boolean): string {
-  const dots = dur.dots > 0 ? 'd' : ''
-  return rest ? `${dur.key}${dots}r` : `${dur.key}${dots}`
-}
-
-function makeRest(
-  clef: 'treble' | 'bass',
-  dur: VexDuration,
-  colors: ReturnType<typeof sheetColorsForPolarity>,
-): StaveNote {
-  const restKey = clef === 'bass' ? 'd/3' : 'b/4'
-  const rest = new StaveNote({
-    keys: [restKey],
-    duration: vexDurationString(dur, true),
-    clef,
-  })
-  // Visual dot (ticks already include it via "qdr" etc.)
-  if (dur.dots > 0) Dot.buildAndAttach([rest], { all: true })
-  rest.setStyle({ fillStyle: colors.rest, strokeStyle: colors.rest })
-  return rest
-}
-
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '')
   if (h.length !== 6) return `rgba(192, 139, 62, ${alpha})`
@@ -162,115 +119,74 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 type Built = {
-  notes: StaveNote[]
-  /** For each StaveNote, the slices that built it (same order as keys). */
-  sliceGroups: NoteSlice[][]
+  notes: (StaveNote | GhostNote)[]
+  /** For each tickable, the notes that built it (same order as keys). */
+  sliceGroups: NotatedNote[][]
+  tuplets: Tuplet[]
+  beams: Beam[]
 }
 
-
-/**
- * When a clef has long sustains overlapping short melody notes, put them in
- * separate VexFlow voices so a whole-note hold does not consume the bar cursor
- * and drop the eighths (Another Love mm.31–33 style).
- */
-function partitionClefSlices(inBar: NoteSlice[], measureInfo: MeasureInfo): NoteSlice[][] {
-  const barQ = barQuarters(measureInfo)
-  const spq = measureInfo.durationSec / barQ
-  const longThresh = spq * Math.max(2, barQ * 0.7) // ~whole-bar or long hold
-  const longs = inBar.filter(s => s.duration >= longThresh - 1e-6)
-  const shorts = inBar.filter(s => s.duration < longThresh - 1e-6)
-  if (!longs.length || !shorts.length) return [inBar]
-  // Only split voices if they actually overlap in time
-  const overlaps = longs.some(L => shorts.some(S =>
-    S.time < L.time + L.duration - 0.02 && L.time < S.time + S.duration - 0.02
-  ))
-  if (!overlaps) return [inBar]
-  return [longs, shorts]
+/** Rest heights: centred for one voice, above/below when voices share a staff. */
+const REST_KEYS: Record<Clef, Record<NotatedVoice['stem'], string>> = {
+  treble: { auto: 'b/4', up: 'e/5', down: 'f/4' },
+  bass: { auto: 'd/3', up: 'g/3', down: 'a/2' },
 }
 
-/**
- * Build a bar in time order: rests go in the gaps before/between notes,
- * not dumped at the end.
- *
- * Cursor advances only by beats actually emitted as VexFlow glyphs so treble
- * and bass stay on the same tick grid when joinVoices formats them.
- */
-function buildVoiceNotes(
-  inBar: NoteSlice[],
-  clef: 'treble' | 'bass',
+/** Beam groups in ticks: per beat, half notes in x/2, dotted quarters in compound x/8. */
+function beamGroupTicks(info: MeasureInfo): number {
+  if (info.beatUnit === 2) return TPQ * 2
+  if (info.beatUnit >= 8) {
+    return info.beatsPerBar % 3 === 0 && info.beatsPerBar > 3 ? (TPQ * 3) / 2 : TPQ
+  }
+  return TPQ
+}
+
+/** One notated voice → VexFlow tickables, tuplets and beams for a bar. */
+function buildVoice(
+  voice: NotatedVoice,
+  clef: Clef,
+  info: MeasureInfo,
   activeNotes: PieceNote[],
-  measureInfo: MeasureInfo,
   colors: ReturnType<typeof sheetColorsForPolarity>,
-  /** Shared across voices on this clef so accidentals persist for the bar. */
-  measureAccidentals: Map<string, string>,
 ): Built {
-  const groups = groupSlices(inBar)
-  const notes: StaveNote[] = []
-  const sliceGroups: NoteSlice[][] = []
-  const keySignature = measureInfo.keySignature
-  // Bar length in quarter notes (6/8 → 3): durations below are in quarters.
-  const barBeats = Math.max(0.25, barQuarters(measureInfo))
-  // Local SPQ for this bar — critical when tempo changed since the first bar.
-  const spq = Math.max(0.01, measureInfo.durationSec / barBeats)
-  const barStart = measureInfo.startSec
-  let cursor = 0 // beats from start of bar (must match Σ glyph beats)
+  const notes: (StaveNote | GhostNote)[] = []
+  const sliceGroups: NotatedNote[][] = []
+  const stem =
+    voice.stem === 'up' ? Stem.UP : voice.stem === 'down' ? Stem.DOWN : null
 
-  const emitRests = (beats: number) => {
-    if (beats < 0.24) return
-    const specs = restDurationsForBeats(beats)
-    let placed = 0
-    for (const rd of specs) {
-      notes.push(makeRest(clef, rd, colors))
+  for (const ev of voice.events) {
+    const duration = `${ev.value}${'d'.repeat(ev.dots)}`
+    if (ev.rest && ev.hidden) {
+      notes.push(new GhostNote({ duration }))
       sliceGroups.push([])
-      placed += rd.beats
+      continue
     }
-    cursor += placed
-  }
-
-  if (!groups.length) {
-    emitRests(barBeats)
-    return { notes, sliceGroups }
-  }
-
-  for (const gRaw of groups) {
-    // Low→high so VexFlow can displace adjacent seconds cleanly
-    const g = [...gRaw].sort((a, b) => a.midi - b.midi)
-    const onset =
-      Math.round(((g[0]!.time - barStart) / spq) * 4) / 4 // 16th grid
-    const gap = onset - cursor
-    if (gap >= 0.24) emitRests(gap)
-
-    const rawBeats = Math.max(...g.map((s) => s.duration)) / spq
-    const start = Math.max(cursor, Math.min(onset, barBeats))
-    // Snap start forward if we skipped a tiny gap (notes must not share ticks)
-    if (start < cursor) {
-      /* keep cursor */
+    if (ev.rest) {
+      const rest = new StaveNote({
+        keys: [REST_KEYS[clef][voice.stem]],
+        duration: `${duration}r`,
+        clef,
+      })
+      // Visual dot (ticks already include it via "qdr" etc.)
+      if (ev.dots > 0) Dot.buildAndAttach([rest], { all: true })
+      rest.setStyle({ fillStyle: colors.rest, strokeStyle: colors.rest })
+      notes.push(rest)
+      sliceGroups.push([])
+      continue
     }
-    const room = Math.max(0.25, barBeats - cursor)
-    const capped = Math.min(Math.max(rawBeats, 0.25), room)
-    const dur = durationToVex(capped * spq, spq)
-
-    const keys = g.map((s) => midiToVexKey(s.midi, keySignature))
     const sn = new StaveNote({
-      keys,
-      duration: vexDurationString(dur, false),
+      keys: ev.notes.map((n) => n.key),
+      duration,
       clef,
+      ...(stem === null ? { auto_stem: true } : { stem_direction: stem }),
     })
-    keys.forEach((k, i) => {
-      if (g[i]?.tieFromPrev) return
-      const [pitch, oct] = k.split('/')
-      const acc = accidentalForMeasure(
-        pitch!,
-        oct!,
-        keySignature,
-        measureAccidentals,
-      )
-      if (acc) sn.addModifier(new Accidental(acc), i)
+    ev.notes.forEach((n, i) => {
+      if (n.accidental) sn.addModifier(new Accidental(n.accidental), i)
     })
     // Dot modifier is visual only; timing comes from "qd" duration above
-    if (dur.dots > 0) Dot.buildAndAttach([sn], { all: true })
+    if (ev.dots > 0) Dot.buildAndAttach([sn], { all: true })
 
-    const isActive = isActiveGroup(g, activeNotes)
+    const isActive = isActiveGroup(ev.notes, activeNotes)
     sn.setStyle({
       fillStyle: isActive ? colors.active : colors.note,
       strokeStyle: isActive ? colors.active : colors.note,
@@ -280,19 +196,55 @@ function buildVoiceNotes(
       lineWidth: 1.25,
     })
     notes.push(sn)
-    sliceGroups.push(g)
-    cursor += dur.beats
-    if (cursor > barBeats + 0.001) break
+    sliceGroups.push(ev.notes)
   }
 
-  if (cursor < barBeats - 0.001) emitRests(barBeats - cursor)
-
-  // Final safety: still empty → rests covering the bar
-  if (!notes.length) {
-    emitRests(barBeats)
+  // Tuplets set the 2/3 tick multiplier, so build them before formatting.
+  const cells = new Map<string, { ref: NotatedEvent['tuplet']; idx: number[] }>()
+  voice.events.forEach((ev, i) => {
+    if (!ev.tuplet) return
+    const cell = cells.get(ev.tuplet.id) ?? { ref: ev.tuplet, idx: [] }
+    cell.idx.push(i)
+    cells.set(ev.tuplet.id, cell)
+  })
+  const tuplets: Tuplet[] = []
+  for (const { ref, idx } of cells.values()) {
+    const group = idx.map((i) => notes[i]!)
+    const tuplet = new Tuplet(group, {
+      num_notes: ref!.numNotes,
+      notes_occupied: ref!.notesOccupied,
+    })
+    // A bracket needs real stems; cells padded with spacer rests stay unmarked.
+    if (group.every((t) => t instanceof StaveNote)) tuplets.push(tuplet)
   }
 
-  return { notes, sliceGroups }
+  // Beam runs of eighths and shorter within each beam group. Tie
+  // continuations break the run so barline-tied chords stay unbeamed.
+  const beams: Beam[] = []
+  const groupTicks = beamGroupTicks(info)
+  let run: StaveNote[] = []
+  let runGroup = -1
+  const flush = () => {
+    if (run.length > 1) beams.push(new Beam(run, stem === null))
+    run = []
+  }
+  voice.events.forEach((ev, i) => {
+    const t = notes[i]!
+    const beamable =
+      !ev.rest &&
+      (ev.value === '8' || ev.value === '16') &&
+      !isPureTieContinuation(ev.notes) &&
+      t instanceof StaveNote
+    const group = Math.floor(ev.start / groupTicks)
+    if (!beamable || group !== runGroup) flush()
+    if (beamable) {
+      run.push(t)
+      runGroup = group
+    }
+  })
+  flush()
+
+  return { notes, sliceGroups, tuplets, beams }
 }
 
 const noteStartCache = new Map<string, number>()
@@ -363,6 +315,12 @@ export function StaffNotation({
   const BPS = Math.max(3, barsPerLine)
   void _secPerQuarter
 
+  const staffOf = useMemo(() => staffAssigner(notes), [notes])
+  const score = useMemo(
+    () => notatePiece(notes, measures, measureCount, staffOf),
+    [notes, measures, measureCount, staffOf],
+  )
+
   useEffect(() => {
     const el = wrap.current
     if (!el) return
@@ -395,14 +353,11 @@ export function StaffNotation({
       el.innerHTML = ''
       const width = Math.max(640, Math.floor(box.clientWidth) || 900)
       const hands = resolveHands(notes)
-      const isTrebleNote = (n: { track: number; midi: number }) =>
-        hands ? n.track === hands.rh : n.midi >= 60
-      const isBassNote = (n: { track: number; midi: number }) =>
-        hands ? n.track === hands.lh : n.midi < 60
+      const isTrebleNote = (n: PieceNote) => staffOf(n) === 'treble'
+      const isBassNote = (n: PieceNote) => staffOf(n) === 'bass'
 
       void _beatsPerBar
 
-      const slices = sliceNotesForTies(notes, measures)
       // One mark per real dynamic change in the piece (not per staff line)
       const pieceDynMarks = dynamicMarksForPiece(notes)
 
@@ -604,17 +559,8 @@ export function StaffNotation({
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
-            const inBar = slicesInMeasure(slices, barNum).filter(isTrebleNote)
-            const trebleAcc = new Map<string, string>()
-            const layers = partitionClefSlices(inBar, barInfo).map((part) =>
-              buildVoiceNotes(
-                part,
-                'treble',
-                activeNotes,
-                barInfo,
-                colors,
-                trebleAcc,
-              ),
+            const layers = (score[barNum - 1]?.staves.treble ?? []).map((v) =>
+              buildVoice(v, 'treble', barInfo, activeNotes, colors),
             )
             staves.push({ clef: 'treble', stave, layers })
           }
@@ -625,17 +571,8 @@ export function StaffNotation({
             stave.setEndBarType(Barline.type.SINGLE)
             stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
             stave.setContext(ctx).draw()
-            const inBar = slicesInMeasure(slices, barNum).filter(isBassNote)
-            const bassAcc = new Map<string, string>()
-            const layers = partitionClefSlices(inBar, barInfo).map((part) =>
-              buildVoiceNotes(
-                part,
-                'bass',
-                activeNotes,
-                barInfo,
-                colors,
-                bassAcc,
-              ),
+            const layers = (score[barNum - 1]?.staves.bass ?? []).map((v) =>
+              buildVoice(v, 'bass', barInfo, activeNotes, colors),
             )
             staves.push({ clef: 'bass', stave, layers })
           }
@@ -660,53 +597,42 @@ export function StaffNotation({
 
           const voices: Voice[] = []
           const voiceStaves: Stave[] = []
-          /** StaveNotes that are pure tie continuations — exclude from beams. */
-          const continuationNotes = new Set<StaveNote>()
+          const fmt = new Formatter()
           for (const row of staves) {
-            for (const built of row.layers) {
-              built.sliceGroups.forEach((g, gi) => {
-                if (isPureTieContinuation(g)) {
-                  continuationNotes.add(built.notes[gi]!)
-                }
-              })
-              const voice = new Voice({
+            const rowVoices = row.layers.map((built) =>
+              new Voice({
                 num_beats: barInfo.beatsPerBar,
                 beat_value: barInfo.beatUnit,
-              }).setStrict(false)
-              voice.addTickables(built.notes)
-              voices.push(voice)
+              })
+                .setStrict(false)
+                .addTickables(built.notes),
+            )
+            // Voices sharing a stave share modifier contexts (collisions,
+            // accidentals); format() below lines beats up across staves.
+            if (rowVoices.length) fmt.joinVoices(rowVoices)
+            for (const v of rowVoices) {
+              voices.push(v)
               voiceStaves.push(row.stave)
             }
           }
 
           if (voices.length) {
-            // Beam consecutive 8ths/16ths/… within each beat group (VexFlow
-            // defaults for the bar's time signature). Create before format so
-            // flags are suppressed; draw after voices so beams sit on top.
-            // Skip pure tie-continuation chords so they aren't beamed into the
-            // next eighths (squashed look at barlines like Another Love m49→m50).
-            const beamGroups = Beam.getDefaultBeamGroups(timeSigLabel(barInfo))
-            const beams: Beam[] = []
-            for (const voice of voices) {
-              const beamable = voice
-                .getTickables()
-                .filter((t) => !continuationNotes.has(t as StaveNote))
-              beams.push(
-                ...Beam.generateBeams(beamable as StaveNote[], {
-                  groups: beamGroups,
-                }),
-              )
-            }
-
-            const fmt = new Formatter()
-            fmt.joinVoices(voices)
+            // Beams and tuplets were created before formatting so flags are
+            // suppressed and tuplet ticks count; draw them on top of voices.
             fmt.format(voices, inner)
             voices.forEach((voice, i) => {
               voice.draw(ctx, voiceStaves[i]!)
             })
-            for (const beam of beams) {
-              beam.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
-              beam.setContext(ctx).draw()
+            for (const row of staves) {
+              for (const built of row.layers) {
+                for (const beam of built.beams) {
+                  beam.setStyle({ fillStyle: colors.note, strokeStyle: colors.note })
+                  beam.setContext(ctx).draw()
+                }
+                for (const tuplet of built.tuplets) {
+                  tuplet.setContext(ctx).draw()
+                }
+              }
             }
           }
 
@@ -725,9 +651,9 @@ export function StaffNotation({
                   const fresh = g.filter((s) => !s.tieFromPrev)
                   if (
                     fresh[0] &&
-                    Math.abs(fresh[0].time - mark.time) <= 0.08
+                    Math.abs(fresh[0].sourceTime - mark.time) <= 0.08
                   ) {
-                    sn = built.notes[gi]
+                    sn = built.notes[gi] as StaveNote
                     break
                   }
                 }
@@ -749,7 +675,8 @@ export function StaffNotation({
           for (const row of staves) {
             for (const built of row.layers) {
               built.sliceGroups.forEach((g, gi) => {
-                const sn = built.notes[gi]!
+                // Only real notes carry slices (spacers and rests have none)
+                const sn = built.notes[gi] as StaveNote
                 g.forEach((slice, ki) => {
                   const key = `${row.clef}:${slice.id}`
                   const prev = placed.get(key)
@@ -857,7 +784,7 @@ export function StaffNotation({
     const ro = new ResizeObserver(() => draw())
     ro.observe(box)
     return () => ro.disconnect()
-  }, [notes, measure, activeNotes, nowSec, measureCount, selection, BPS, measures, themeEpoch, polarity])
+  }, [notes, measure, activeNotes, nowSec, measureCount, selection, BPS, measures, themeEpoch, polarity, score, staffOf])
 
   const lineStart =
     Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
