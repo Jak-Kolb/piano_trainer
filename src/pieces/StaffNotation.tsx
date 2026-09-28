@@ -868,7 +868,7 @@ export function StaffNotation({
     }
 
     draw()
-  }, [notes, measure, activeNotes, selection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth, dimStaff, noteMarks])
+  }, [notes, measure, activeNotes, selection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth, width, measureCount, dimStaff, noteMarks])
 
   // Every render (60fps during Play): just slide the drawing.
   useLayoutEffect(() => {
