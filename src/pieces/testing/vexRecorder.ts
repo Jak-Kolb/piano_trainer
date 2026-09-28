@@ -25,7 +25,10 @@ export interface DrawnVoice {
 
 export interface DrawnStave {
   bar: number
+  /** Which staff: "treble" = upper (right hand), "bass" = lower (left hand). */
   clef: string
+  /** Clef actually printed for this staff on this line. */
+  drawnClef: string
   x: number
   y: number
   timeSig?: string
@@ -42,12 +45,16 @@ const TICKS_PER_QUARTER = 4096
 
 export const vexLog = {
   raw: [] as RawStave[],
+  /** Staves that drew only a centred whole rest (MultiMeasureRest). */
+  wholeBarRests: 0,
   renderers: 0,
-  tuplets: [] as { notes: number; num: number }[],
+  /** Tuplets as drawn (width measuring builds throwaway ones too). */
+  tuplets: [] as { notes: number; num: number; bracketed: boolean; ratioed: boolean }[],
 }
 
 export function resetVexLog(): void {
   vexLog.raw = []
+  vexLog.wholeBarRests = 0
   vexLog.renderers = 0
   vexLog.tuplets = []
 }
@@ -63,6 +70,7 @@ export function recordingVexflow(mod: Record<string, any>): Record<string, any> 
     Voice: mod.Voice as AnyCtor,
     Tuplet: mod.Tuplet as AnyCtor,
     Renderer: mod.Renderer as AnyCtor,
+    MultiMeasureRest: mod.MultiMeasureRest as AnyCtor,
   }
 
   class Stave extends Base.Stave {
@@ -79,6 +87,7 @@ export function recordingVexflow(mod: Record<string, any>): Record<string, any> 
     draw(...args: any[]) {
       const rec: RawStave = {
         ...this.__mods,
+        drawnClef: this.getClef(),
         x: this.getX(),
         y: this.getY(),
         measure: this.getMeasure(),
@@ -133,9 +142,26 @@ export function recordingVexflow(mod: Record<string, any>): Record<string, any> 
   }
 
   class Tuplet extends Base.Tuplet {
+    __rec: { notes: number; num: number; bracketed: boolean; ratioed: boolean }
     constructor(notes: any[], options?: any) {
       super(notes, options)
-      vexLog.tuplets.push({ notes: notes.length, num: options?.num_notes ?? notes.length })
+      this.__rec = {
+        notes: notes.length,
+        num: options?.num_notes ?? notes.length,
+        bracketed: options?.bracketed ?? true,
+        ratioed: options?.ratioed ?? false,
+      }
+    }
+    draw(...args: any[]) {
+      vexLog.tuplets.push(this.__rec)
+      return super.draw(...args)
+    }
+  }
+
+  class MultiMeasureRest extends Base.MultiMeasureRest {
+    draw(...args: any[]) {
+      vexLog.wholeBarRests += 1
+      return super.draw(...args)
     }
   }
 
@@ -146,13 +172,14 @@ export function recordingVexflow(mod: Record<string, any>): Record<string, any> 
     }
   }
 
-  return { ...mod, Stave, StaveNote, GhostNote, Voice, Tuplet, Renderer }
+  return { ...mod, Stave, StaveNote, GhostNote, Voice, Tuplet, Renderer, MultiMeasureRest }
 }
 
 /**
- * Staves in drawing order, labeled with bar number and clef.
- * Each system's first treble stave carries the measure number; other staves
- * in the system are placed by row (y) and column (x).
+ * Staves in drawing order, labeled with bar number and staff.
+ * Each system's upper row carries the measure number on its first stave;
+ * the row below it in the same system is the lower staff. Bars within a row
+ * are numbered by column (x).
  */
 export function drawnStaves(): DrawnStave[] {
   const rows: { y: number; staves: RawStave[] }[] = []
@@ -170,13 +197,12 @@ export function drawnStaves(): DrawnStave[] {
     const sorted = [...row.staves].sort((a, b) => a.x - b.x)
     const lead = sorted.find((s) => s.measure > 0)
     if (lead) systemStart = lead.measure
+    const staff = lead ? 'treble' : 'bass'
     sorted.forEach((s, i) => {
-      const firstNote = s.voices
-        .flatMap((v) => v.notes as (DrawnNote & { clef?: string })[])
-        .find((n) => n.clef)
       out.push({
         bar: systemStart + i,
-        clef: firstNote?.clef ?? '?',
+        clef: staff,
+        drawnClef: s.drawnClef,
         x: s.x,
         y: s.y,
         timeSig: s.timeSig,

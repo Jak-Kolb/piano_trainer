@@ -17,12 +17,6 @@ export async function playNotesDemo(
   return playPianoNotes(notes, tempoPercent)
 }
 
-export function lineStartMeasure(measure: number, barsPerLine = 8): number {
-  return (
-    Math.floor((Math.max(1, measure) - 1) / barsPerLine) * barsPerLine + 1
-  )
-}
-
 /**
  * How many bars fit on one staff line, from the bar length in quarter notes.
  * Targets ~24 quarter-beats of music (was a fixed 8 bars = 32 in 4/4).

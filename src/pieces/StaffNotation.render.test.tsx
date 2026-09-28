@@ -111,3 +111,42 @@ describe('StaffNotation redraws', () => {
     await staff.unmount()
   })
 })
+
+describe('StaffNotation engraving details', () => {
+  it('prints a whole-bar rest as one centred rest in any meter', async () => {
+    const staves = await draw({
+      timeSigs: [[0, 3, 4]],
+      notes: [[0, 3, 60], [3, 3, 62], [3, 3, 48, 1]],
+    })
+    const bass1 = staves.find((s) => s.bar === 1 && s.clef === 'bass')!
+    expect(bass1.voices).toEqual([])
+    expect(vexLog.wholeBarRests).toBe(1)
+  })
+
+  it('beamed triplets get a plain number, no bracket', async () => {
+    const t = 1 / 3
+    await draw({ notes: [[0, t, 60], [t, t, 62], [2 * t, t, 64], [1, 3, 65], ...withBass(1, 4)] })
+    expect(vexLog.tuplets).toEqual([{ notes: 3, num: 3, bracketed: false, ratioed: false }])
+  })
+
+  it('switches a low right hand to bass clef for the line', async () => {
+    const staves = await draw({
+      notes: [
+        ...Array.from({ length: 8 }, (_, i) => [i, 1, i % 2 ? 62 : 50] as [number, number, number]),
+        ...withBass(2, 4),
+      ],
+    })
+    const upper = staves.find((s) => s.bar === 1 && s.clef === 'treble')!
+    expect(upper.drawnClef).toBe('bass')
+    expect(staves.find((s) => s.bar === 1 && s.clef === 'bass')!.drawnClef).toBe('bass')
+  })
+
+  it('tells mid-line staves their clef so key changes land on the right lines', async () => {
+    const staves = await draw({
+      keySigs: [{ beat: 0, sharps: 1 }, { beat: 4, sharps: -1 }],
+      notes: [[0, 4, 72], [4, 4, 72], [0, 4, 48, 1], [4, 4, 48, 1]],
+    })
+    const bass2 = staves.find((s) => s.bar === 2 && s.clef === 'bass')!
+    expect([bass2.keySig, bass2.drawnClef]).toEqual(['F', 'bass'])
+  })
+})
