@@ -13,6 +13,7 @@ import {
   Dot,
   Formatter,
   GhostNote,
+  MultiMeasureRest,
   Renderer,
   Stave,
   StaveNote,
@@ -27,14 +28,25 @@ import type { MeasureInfo, PieceNote } from './types'
 import { dynamicMarksForPiece } from './dynamics'
 import { timeSigToDraw } from './meter'
 import {
+  CLEFS,
   notatePiece,
   staffAssigner,
   TPQ,
   type Clef,
+  type NotatedBar,
   type NotatedEvent,
   type NotatedNote,
   type NotatedVoice,
 } from './notate'
+import {
+  barWidths as planBarWidths,
+  clefsForSystem,
+  lineScrollPos,
+  packSystems,
+  systemIndexOf,
+  type PackOptions,
+  type SystemPlan,
+} from './sheetLayout'
 import {
   isPureTieContinuation,
   shouldDrawPartialInbound,
@@ -54,29 +66,11 @@ const CLEF_GAP = 18
 const SYSTEM_PAD_TOP = 16
 const SYSTEM_PAD_BOTTOM = 14
 const SYSTEM_GAP = 28
-
-/**
- * Line scroll in system-units.
- * Stay frozen through the entire first visible line. Once the playhead hits
- * the first measure of the *next* line, glide that line up so it lands exactly
- * where the first line was by the end of that next line.
- */
-function lineScrollPos(
-  measure: number,
-  beatFrac: number,
-  barsPerLine: number,
-): number {
-  const bps = Math.max(1, barsPerLine)
-  const abs = Math.max(0, measure - 1) + Math.min(0.999, Math.max(0, beatFrac))
-  const lineIdx = Math.floor(abs / bps)
-  const within = (abs % bps) / bps // 0 at line start → ~1 at line end
-  // Line 0 (first system): no motion. Later lines: glide 0→1 across that line,
-  // which stacks as (lineIdx - 1) + within so boundaries stay continuous.
-  if (lineIdx <= 0) return 0
-  const eased = within * within * (3 - 2 * within) // smoothstep
-  return lineIdx - 1 + eased
-}
-
+/** Left padding the formatter keeps inside every bar. */
+const NOTE_INSET = 28
+/** Extra width of a line's first bar so clef + key don't squeeze its notes. */
+const CLEF_PAD = 52
+const MARGIN_LEFT = 8
 
 interface Props {
   notes: PieceNote[]
@@ -101,6 +95,8 @@ interface Props {
   measures: MeasureInfo[]
   /** Light notes on dark paper, or dark notes on light paper. */
   polarity?: SheetPolarity
+  /** Which bars share each staff line (changes with width and content). */
+  onSystemsChange?: (systems: SystemPlan[]) => void
 }
 
 function isActiveGroup(g: NotatedNote[], activeNotes: PieceNote[]): boolean {
@@ -206,33 +202,18 @@ function buildVoice(
     sliceGroups.push(ev.notes)
   }
 
-  // Tuplets set the 2/3 tick multiplier, so build them before formatting.
-  const cells = new Map<string, { ref: NotatedEvent['tuplet']; idx: number[] }>()
-  voice.events.forEach((ev, i) => {
-    if (!ev.tuplet) return
-    const cell = cells.get(ev.tuplet.id) ?? { ref: ev.tuplet, idx: [] }
-    cell.idx.push(i)
-    cells.set(ev.tuplet.id, cell)
-  })
-  const tuplets: Tuplet[] = []
-  for (const { ref, idx } of cells.values()) {
-    const group = idx.map((i) => notes[i]!)
-    const tuplet = new Tuplet(group, {
-      num_notes: ref!.numNotes,
-      notes_occupied: ref!.notesOccupied,
-    })
-    // A bracket needs real stems; cells padded with spacer rests stay unmarked.
-    if (group.every((t) => t instanceof StaveNote)) tuplets.push(tuplet)
-  }
-
   // Beam runs of eighths and shorter within each beam group. Tie
   // continuations break the run so barline-tied chords stay unbeamed.
   const beams: Beam[] = []
+  const beamed = new Set<StaveNote | GhostNote>()
   const groupTicks = beamGroupTicks(info)
   let run: StaveNote[] = []
   let runGroup = -1
   const flush = () => {
-    if (run.length > 1) beams.push(new Beam(run, stem === null))
+    if (run.length > 1) {
+      beams.push(new Beam(run, stem === null))
+      for (const n of run) beamed.add(n)
+    }
     run = []
   }
   voice.events.forEach((ev, i) => {
@@ -250,6 +231,28 @@ function buildVoice(
     }
   })
   flush()
+
+  // Tuplets set the 2/3 tick multiplier, so build them before formatting.
+  // Printed style: just "3" / "6"; a bracket only when the group isn't beamed.
+  const cells = new Map<string, { ref: NotatedEvent['tuplet']; idx: number[] }>()
+  voice.events.forEach((ev, i) => {
+    if (!ev.tuplet) return
+    const cell = cells.get(ev.tuplet.id) ?? { ref: ev.tuplet, idx: [] }
+    cell.idx.push(i)
+    cells.set(ev.tuplet.id, cell)
+  })
+  const tuplets: Tuplet[] = []
+  for (const { ref, idx } of cells.values()) {
+    const group = idx.map((i) => notes[i]!)
+    const tuplet = new Tuplet(group, {
+      num_notes: ref!.numNotes,
+      notes_occupied: ref!.notesOccupied,
+      ratioed: false,
+      bracketed: !group.every((t) => beamed.has(t)),
+    })
+    // A number needs real stems; cells padded with spacer rests stay unmarked.
+    if (group.every((t) => t instanceof StaveNote)) tuplets.push(tuplet)
+  }
 
   return { notes, sliceGroups, tuplets, beams }
 }
@@ -276,6 +279,74 @@ function noteStartOffset(
   return x
 }
 
+/** Key / time signatures printed at the start of this bar. */
+function beginModifiers(
+  measures: MeasureInfo[],
+  barNum: number,
+  lineStart: boolean,
+) {
+  const info = measureInfoAt(measures, barNum)
+  const prevKey =
+    barNum > 1 ? measureInfoAt(measures, barNum - 1).keySignature : info.keySignature
+  const changed = info.keySignature !== prevKey
+  const key =
+    changed || (lineStart && info.keySignature !== 'C') ? info.keySignature : null
+  return {
+    key,
+    cancel: changed ? prevKey : null,
+    time: timeSigToDraw(measures, barNum),
+  }
+}
+
+/** Extra room beyond the usual line-start clef + key (CLEF_PAD). */
+function modifierPad(
+  measures: MeasureInfo[],
+  barNum: number,
+  lineStart: boolean,
+): number {
+  const mods = beginModifiers(measures, barNum, lineStart)
+  const lineKey = measureInfoAt(measures, barNum).keySignature
+  let pad = 0
+  for (const clef of CLEFS) {
+    const full = noteStartOffset(lineStart ? clef : null, mods.key, mods.cancel, mods.time)
+    const base = lineStart
+      ? noteStartOffset(clef, lineKey !== 'C' ? lineKey : null, null, null)
+      : noteStartOffset(null, null, null, null)
+    pad = Math.max(pad, full - base)
+  }
+  return pad
+}
+
+/**
+ * Minimum music width of each bar (px), from VexFlow's own spacing with
+ * beams and tuplets applied. Measured once per piece to break lines.
+ */
+function measureMinWidths(score: NotatedBar[], measures: MeasureInfo[]): number[] {
+  const colors = sheetColorsForPolarity('light-on-dark')
+  return score.map((nb) => {
+    const info = measureInfoAt(measures, nb.bar)
+    const fmt = new Formatter()
+    const voices: Voice[] = []
+    for (const clef of CLEFS) {
+      if (isFullBarRest(nb.staves[clef])) continue
+      const staffVoices = nb.staves[clef].map((v) =>
+        new Voice({ num_beats: info.beatsPerBar, beat_value: info.beatUnit })
+          .setStrict(false)
+          .addTickables(buildVoice(v, clef, info, [], colors).notes),
+      )
+      if (!staffVoices.length) continue
+      fmt.joinVoices(staffVoices)
+      voices.push(...staffVoices)
+    }
+    return voices.length ? fmt.preCalculateMinTotalWidth(voices) : 0
+  })
+}
+
+/** A staff that rests for the whole bar prints one centred whole rest. */
+function isFullBarRest(voices: NotatedVoice[]): boolean {
+  return voices.length === 1 && voices[0]!.events.every((e) => e.rest)
+}
+
 function inSelection(
   bar: number,
   selection: { start: number; end: number } | null,
@@ -300,6 +371,7 @@ export function StaffNotation({
   beatsPerBar: _beatsPerBar = 4,
   measures,
   polarity = 'light-on-dark',
+  onSystemsChange,
 }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -348,6 +420,34 @@ export function StaffNotation({
     return () => ro.disconnect()
   }, [])
 
+  // Line breaking: bars pack by content (dense bars get fewer per line),
+  // up to BPS; each line picks the clef each hand reads best in.
+  const minWidths = useMemo(() => measureMinWidths(score, measures), [score, measures])
+  const width = Math.max(640, boxWidth || 900)
+  const packOpts = useMemo<PackOptions>(
+    () => ({
+      usable: width - MARGIN_LEFT - 8,
+      maxBars: BPS,
+      clefPad: CLEF_PAD,
+      inset: NOTE_INSET,
+      padFor: (bar, lineStart) => modifierPad(measures, bar, lineStart),
+    }),
+    [width, BPS, measures],
+  )
+  const systems = useMemo(
+    () => packSystems(minWidths, measureCount, packOpts),
+    [minWidths, measureCount, packOpts],
+  )
+  const lineClefs = useMemo(
+    () => systems.map((sys) => clefsForSystem(score, sys)),
+    [systems, score],
+  )
+  const onSystemsChangeRef = useRef(onSystemsChange)
+  onSystemsChangeRef.current = onSystemsChange
+  useEffect(() => {
+    onSystemsChangeRef.current?.(systems)
+  }, [systems])
+
   // Playhead → continuous line position. Only its integer part (which
   // systems are on the page) needs a redraw; the fraction is a CSS glide.
   const playInfo = measureInfoAt(measures, measure)
@@ -356,7 +456,7 @@ export function StaffNotation({
     0.999,
     Math.max(0, (tPlay - playInfo.startSec) / Math.max(0.01, playInfo.durationSec)),
   )
-  const scrollPos = lineScrollPos(measure, beatFrac, BPS)
+  const scrollPos = lineScrollPos(systems, measure, beatFrac)
   const baseLine = Math.max(0, Math.floor(scrollPos))
 
   useEffect(() => {
@@ -393,7 +493,6 @@ export function StaffNotation({
 
     const draw = () => {
       el.innerHTML = ''
-      const width = Math.max(640, boxWidth || 900)
       const isTrebleNote = (n: PieceNote) => staffOf(n) === 'treble'
       const isBassNote = (n: PieceNote) => staffOf(n) === 'bass'
 
@@ -404,17 +503,16 @@ export function StaffNotation({
       const lineIndices: number[] = []
       for (let i = -1; i <= 2; i++) {
         const li = baseLine + i
-        if (li < 0) continue
-        const start = li * BPS + 1
-        if (start <= measureCount) lineIndices.push(li)
+        if (li >= 0 && li < systems.length) lineIndices.push(li)
       }
       if (lineIndices.length === 0) lineIndices.push(0)
 
-      const windowLo = (lineIndices[0] ?? 0) * BPS + 1
+      const firstSys = systems[lineIndices[0]!]!
+      const lastSys = systems[lineIndices[lineIndices.length - 1]!]!
+      const windowLo = firstSys.start
+      const windowHi = lastSys.start + lastSys.count - 1
       const windowNotes = notes.filter(
-        (n) =>
-          n.measure >= windowLo &&
-          n.measure < windowLo + BPS * 4,
+        (n) => n.measure >= windowLo && n.measure <= windowHi,
       )
       const hasTreble =
         windowNotes.some(isTrebleNote) || windowNotes.length === 0
@@ -440,70 +538,8 @@ export function StaffNotation({
       ctx.setFillStyle(colors.note)
       ctx.setStrokeStyle(colors.staff)
 
-            const marginLeft = 8
-      const usable = width - marginLeft - 8
-
-      /** Key / time signatures printed at the start of this bar. */
-      const beginModifiers = (barNum: number, lineStart: boolean) => {
-        const info = measureInfoAt(measures, barNum)
-        const prevKey =
-          barNum > 1
-            ? measureInfoAt(measures, barNum - 1).keySignature
-            : info.keySignature
-        const changed = info.keySignature !== prevKey
-        const key =
-          changed || (lineStart && info.keySignature !== 'C')
-            ? info.keySignature
-            : null
-        return {
-          key,
-          cancel: changed ? prevKey : null,
-          time: timeSigToDraw(measures, barNum),
-        }
-      }
-      /** Extra room beyond the usual line-start clef + key (CLEF_PAD). */
-      const modifierPad = (barNum: number, lineStart: boolean): number => {
-        const mods = beginModifiers(barNum, lineStart)
-        const lineKey = measureInfoAt(measures, barNum).keySignature
-        let pad = 0
-        for (const clef of ['treble', 'bass'] as const) {
-          const full = noteStartOffset(
-            lineStart ? clef : null,
-            mods.key,
-            mods.cancel,
-            mods.time,
-          )
-          const base = lineStart
-            ? noteStartOffset(clef, lineKey !== 'C' ? lineKey : null, null, null)
-            : noteStartOffset(null, null, null, null)
-          pad = Math.max(pad, full - base)
-        }
-        return pad
-      }
+      const marginLeft = MARGIN_LEFT
       const systemsMeta: { start: number; top: number; bottom: number; barWidths: number[] }[] = []
-
-      // Equal *music* width per bar. First bar of each system is wider by
-      // CLEF_PAD so clef + key signature don't steal space from the notes
-      // (which made the first measure look squished at the end). Bars that
-      // also print a time signature or a key change get that room on top.
-      const NOTE_INSET = 28
-      const CLEF_PAD = 52
-      const barLayoutForSystem = (
-        start: number,
-      ): { widths: number[]; pads: number[] } => {
-        const n = Math.max(0, Math.min(BPS, measureCount - start + 1))
-        if (n <= 0) return { widths: [], pads: [] }
-        const pads = Array.from({ length: n }, (_, i) =>
-          modifierPad(start + i, i === 0),
-        )
-        const padSum = pads.reduce((a, p) => a + p, 0)
-        const musicUsable = Math.max(n * 60, usable - CLEF_PAD - padSum)
-        const share = musicUsable / n
-        return {
-          widths: pads.map((p, i) => share + p + (i === 0 ? CLEF_PAD : 0)),
-          pads,
-        }
-      }
 
       type TieKey = string
       const placed = new Map<
@@ -513,12 +549,14 @@ export function StaffNotation({
       /** StaveNotes that already got a full same-system outbound StaveTie. */
       const fullTieFirstNotes = new Set<StaveNote>()
 
-      const drawSystem = (start: number, y0: number) => {
-        const bars = Array.from(
-          { length: BPS },
-          (_, i) => start + i,
-        )
-        const { widths: barWidths, pads: barPads } = barLayoutForSystem(start)
+      const drawSystem = (li: number, y0: number) => {
+        const sys = systems[li]!
+        const start = sys.start
+        const clefs = lineClefs[li]!
+        const bars = Array.from({ length: sys.count }, (_, i) => start + i)
+        // Each bar: its minimum width plus an equal share of the leftover;
+        // the first bar also carries CLEF_PAD for clef + key.
+        const { widths: barWidths, pads: barPads } = planBarWidths(sys, minWidths, packOpts)
         const barX = (bi: number) =>
           marginLeft + barWidths.slice(0, bi).reduce((a, w) => a + w, 0)
         systemsMeta.push({ start, top: y0, bottom: y0 + systemH, barWidths })
@@ -560,46 +598,47 @@ export function StaffNotation({
             (bi === 0 ? NOTE_INSET + CLEF_PAD : NOTE_INSET) + barPads[bi]!
 
           type StaveRow = {
-            clef: 'treble' | 'bass'
+            /** Upper (right hand) or lower (left hand) staff. */
+            clef: Clef
             stave: Stave
             layers: Built[]
           }
           const staves: StaveRow[] = []
           const barInfo = measureInfoAt(measures, barNum)
-          const mods = beginModifiers(barNum, bi === 0)
-          const addBeginModifiers = (stave: Stave, clef: 'treble' | 'bass') => {
-            if (bi === 0) stave.addClef(clef)
+          const mods = beginModifiers(measures, barNum, bi === 0)
+
+          /** One staff of this bar, printed in this line's clef for that hand. */
+          const drawStaff = (staff: Clef, y: number) => {
+            const drawnClef = clefs[staff]
+            const stave = new Stave(x, y, barWidths[bi]!)
+            if (bi === 0) stave.addClef(drawnClef)
+            // Mid-line staves print no clef but must know it, or a key change
+            // puts its accidentals where the treble clef would have them.
+            else (stave as unknown as { clef: string }).clef = drawnClef
             if (mods.key) stave.addKeySignature(mods.key, mods.cancel ?? undefined)
             if (mods.time) stave.addTimeSignature(mods.time)
-          }
-
-          if (showTreble) {
-            const stave = new Stave(x, trebleY, barWidths[bi]!)
-            addBeginModifiers(stave, 'treble')
-            if (bi === 0) {
-              // Measure number at the start of each staff line (printed-music style).
-              stave.setMeasure(start)
+            // Measure number at the start of each staff line (printed-music style).
+            if (bi === 0 && staff === 'treble') stave.setMeasure(start)
+            stave.setEndBarType(Barline.type.SINGLE)
+            stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
+            stave.setContext(ctx).draw()
+            const model = score[barNum - 1]?.staves[staff] ?? []
+            let layers: Built[] = []
+            if (isFullBarRest(model)) {
+              const rest = new MultiMeasureRest(1, {
+                number_of_measures: 1,
+                show_number: false,
+                use_symbols: true,
+              })
+              rest.setStyle({ fillStyle: colors.rest, strokeStyle: colors.rest })
+              rest.setStave(stave).setContext(ctx).draw()
+            } else {
+              layers = model.map((v) => buildVoice(v, drawnClef, barInfo, activeNotes, colors))
             }
-            stave.setEndBarType(Barline.type.SINGLE)
-            stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
-            stave.setContext(ctx).draw()
-            const layers = (score[barNum - 1]?.staves.treble ?? []).map((v) =>
-              buildVoice(v, 'treble', barInfo, activeNotes, colors),
-            )
-            staves.push({ clef: 'treble', stave, layers })
+            staves.push({ clef: staff, stave, layers })
           }
-
-          if (showBass) {
-            const stave = new Stave(x, bassY, barWidths[bi]!)
-            addBeginModifiers(stave, 'bass')
-            stave.setEndBarType(Barline.type.SINGLE)
-            stave.setStyle({ fillStyle: colors.staff, strokeStyle: colors.staff, lineWidth: 1 })
-            stave.setContext(ctx).draw()
-            const layers = (score[barNum - 1]?.staves.bass ?? []).map((v) =>
-              buildVoice(v, 'bass', barInfo, activeNotes, colors),
-            )
-            staves.push({ clef: 'bass', stave, layers })
-          }
+          if (showTreble) drawStaff('treble', trebleY)
+          if (showBass) drawStaff('bass', bassY)
 
           // Extra inset when the first sounding tickable is a pure tie continuation
           // (keeps equal bar widths; only shrinks formatter room).
@@ -773,9 +812,8 @@ export function StaffNotation({
       // Place each system at its scrolled Y. Constant translate(-pad) only
       // reveals the viewport — scrollPos changes never remap local indices.
       for (const lineIdx of lineIndices) {
-        const start = lineIdx * BPS + 1
         const y0 = pad + (lineIdx - baseLine) * stride
-        drawSystem(start, y0)
+        drawSystem(lineIdx, y0)
         // Clear after outbound partials so the next system uses inbound partials
         placed.clear()
         fullTieFirstNotes.clear()
@@ -796,7 +834,7 @@ export function StaffNotation({
     }
 
     draw()
-  }, [notes, measure, activeNotes, measureCount, selection, BPS, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, boxWidth, baseLine])
+  }, [notes, measure, activeNotes, selection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth])
 
   // Every render (60fps during Play): just slide the drawing.
   useLayoutEffect(() => {
@@ -808,12 +846,9 @@ export function StaffNotation({
     el.style.transform = `translateY(${-offset}px)`
   })
 
-  const lineStart =
-    Math.floor((Math.max(1, measure) - 1) / BPS) * BPS +
-    1
-  const lineEnd = lineStart + BPS - 1
-  const nextStart = lineStart + BPS
-  const hasNext = nextStart <= measureCount
+  const curLine = systemIndexOf(systems, measure)
+  const cur = systems[curLine]
+  const next = systems[curLine + 1]
 
   const handleClick = (e: MouseEvent) => {
     const lay = layout.current
@@ -856,8 +891,8 @@ export function StaffNotation({
     >
       <div ref={host} className="w-full" />
       <p className="pb-1 text-center font-ui text-xs text-dust">
-        Bars {lineStart}–{lineEnd}
-        {hasNext ? ` + next ${nextStart}–${Math.min(measureCount, nextStart + BPS - 1)}` : ''}
+        {cur ? `Bars ${cur.start}–${cur.start + cur.count - 1}` : ''}
+        {next ? ` + next ${next.start}–${next.start + next.count - 1}` : ''}
         {' · '}playing {measure}
         {selLabel ?? ''}
         {' · '}

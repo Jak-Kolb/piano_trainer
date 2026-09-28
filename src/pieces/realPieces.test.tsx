@@ -34,20 +34,18 @@ async function load(name: string) {
   return parseMidiArrayBuffer(bytes.buffer as ArrayBuffer)
 }
 
-/** Render every line of the piece; one entry per bar and clef. */
+/** Render every line of the piece; one entry per bar and staff. */
 async function renderAll(parsed: ParsedPiece): Promise<{ staves: DrawnStave[]; tuplets: number }> {
-  const BPS = 4
   const seen = new Map<string, DrawnStave>()
+  const bars = new Set<number>()
   let tuplets = 0
-  const lines = Math.ceil(parsed.measureCount / BPS)
-  // Rendering at the first bar of line L draws lines L-2 … L+1.
-  for (let line = 1; line - 2 < lines; line += 4) {
-    const staves = await renderStaff(parsed, {
-      measure: Math.min(parsed.measureCount, 1 + BPS * line),
-      barsPerLine: BPS,
-    })
+  // Rendering at a bar always draws that bar's line and the next one.
+  for (let m = 1; m <= parsed.measureCount; m++) {
+    if (bars.has(m)) continue
+    const staves = await renderStaff(parsed, { measure: m, barsPerLine: 4 })
     tuplets += vexLog.tuplets.length
     for (const st of staves) {
+      bars.add(st.bar)
       const key = `${st.bar}:${st.clef}`
       if (!seen.has(key)) seen.set(key, st)
     }

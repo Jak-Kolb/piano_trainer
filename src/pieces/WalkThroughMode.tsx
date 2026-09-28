@@ -4,7 +4,6 @@ import {
   barsPerSystem,
   dominantBarQuarters,
   playNotesDemo,
-  lineStartMeasure,
 } from './demoAudio'
 import { preloadPiano } from './pianoPlayer'
 import {
@@ -19,6 +18,7 @@ import { PianoBar } from './PianoBar'
 import { PianoRoll } from './PianoRoll'
 import { PieceControlsBar } from './PieceControlsBar'
 import { StaffNotation } from './StaffNotation'
+import { systemIndexOf, type SystemPlan } from './sheetLayout'
 import type { ParsedPiece, PieceControls, PieceNote } from './types'
 import {
   loadSheetPolarity,
@@ -91,8 +91,11 @@ export function WalkThroughMode({
   const step = steps[stepIdx]
   const measure = step?.[0]?.measure ?? controls.loopStartMeasure
   const barsPerLine = barsPerSystem(dominantBarQuarters(parsed.measures))
-  const lineStart = lineStartMeasure(measure, barsPerLine)
-  const lineEnd = lineStart + barsPerLine - 1
+  // Lines as the sheet actually laid them out (dense bars pack fewer per line)
+  const [systems, setSystems] = useState<SystemPlan[]>([])
+  const line = systems[systemIndexOf(systems, measure)]
+  const lineStart = line?.start ?? measure
+  const lineEnd = line ? line.start + line.count - 1 : measure
   const maxMeasure = Math.max(controls.loopEndMeasure, parsed.measureCount)
 
   const activeNotes: PieceNote[] = useMemo(() => {
@@ -529,6 +532,7 @@ export function WalkThroughMode({
                 else jumpPrevMeasure()
               }}
               barsPerLine={barsPerLine}
+              onSystemsChange={setSystems}
               beatsPerBar={parsed.beatsPerBar}
               measures={parsed.measures}
               polarity={sheetPolarity}
