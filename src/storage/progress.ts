@@ -2,8 +2,6 @@ export interface ProgressState {
   practiceDays: string[]
   triadHits: number
   triadMisses: number
-  sightReadingCount: number
-  sightReadingLevel: number
   pieces: { name: string; started: string; clean?: string }[]
   assessmentScore: string
 }
@@ -29,8 +27,6 @@ function defaultProgress(): ProgressState {
     practiceDays: [],
     triadHits: 0,
     triadMisses: 0,
-    sightReadingCount: 0,
-    sightReadingLevel: 1,
     pieces: [],
     assessmentScore: '',
   }

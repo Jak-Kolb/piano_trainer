@@ -30,6 +30,8 @@ export interface InputSource {
   /** Live level meter — mic only; others may return null. */
   getMeter(): MicMeter | null
   supportsAutomaticGrade(): boolean
+  /** A keyboard is actually connected (MIDI mode with a device plugged in). */
+  hasDevice(): boolean
   start(): Promise<void>
   onChange(listener: () => void): () => void
   /** Individual key presses/releases with timestamps (MIDI only). */
