@@ -102,7 +102,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   const measures = parsed.measures
   const hasMidi = input.id === 'midi'
   // A keyboard is actually connected (not just MIDI mode with none plugged in)
-  const keyboardOn = hasMidi && midiConnected(input)
+  const keyboardOn = hasMidi && input.hasDevice()
 
   // ——— Settings (remembered per piece) ———
   const [mode, setMode] = useState<PracticeMode>(initial.mode)
@@ -375,7 +375,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
       ...(options.countIn ? countInClicks(measures, startBar) : []),
       ...(options.metronome ? clickTimes(measures, startBar, hi) : []),
     ]
-    graderRef.current = midiConnected(input) ? createGrader(expected, tempoFactor) : null
+    graderRef.current = input.hasDevice() ? createGrader(expected, tempoFactor) : null
     setMarks(new Map())
     setRun('loading')
     markActive()
@@ -837,14 +837,6 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
         <p className="practice-status-text">{status}</p>
       </footer>
     </div>
-  )
-}
-
-/** MIDI mode with a device plugged in (status lists device names). */
-function midiConnected(input: InputSource): boolean {
-  return (
-    input.id === 'midi' &&
-    !/^(No MIDI|MIDI off|MIDI permission|Web MIDI)/.test(input.getStatus())
   )
 }
 

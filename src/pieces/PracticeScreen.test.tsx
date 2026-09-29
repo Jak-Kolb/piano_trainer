@@ -6,11 +6,12 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { InputSource, NoteEvent } from '../input'
+import type { InputSource } from '../input'
 import { parseMidiArrayBuffer } from './parseMidi'
 import { playAccompaniment, startPlayAlong } from './pianoPlayer'
 import { DEFAULT_OPTIONS, type PieceState, type PracticeOptions } from './practice/options'
 import { PracticeScreen } from './PracticeScreen'
+import { fakeKeyboard } from './testing/fakeKeyboard'
 import { installDomShims } from './testing/renderStaff'
 import { synthMidi } from './testing/synthMidi'
 import type { ParsedPiece } from './types'
@@ -35,48 +36,6 @@ vi.mock('./pieceStore', () => ({
   savePieceState: vi.fn(async () => {}),
   saveSession: vi.fn(async () => 1),
 }))
-
-function fakeKeyboard() {
-  const held = new Set<number>()
-  const changes = new Set<() => void>()
-  const notes = new Set<(e: NoteEvent) => void>()
-  const src: InputSource = {
-    id: 'midi',
-    label: 'MIDI',
-    getStatus: () => 'Kawai USB MIDI',
-    getHeldPitchClasses: () => [],
-    getHeldMidiNotes: () => [...held],
-    getMeter: () => null,
-    supportsAutomaticGrade: () => true,
-    start: async () => {},
-    onChange(l) {
-      changes.add(l)
-      return () => changes.delete(l)
-    },
-    onNote(l) {
-      notes.add(l)
-      return () => notes.delete(l)
-    },
-    dispose() {},
-  }
-  const send = (midi: number, on: boolean) =>
-    act(() => {
-      if (on) held.add(midi)
-      else held.delete(midi)
-      for (const l of notes) l({ midi, on, velocity: on ? 0.7 : 0, time: performance.now() })
-      for (const l of changes) l()
-    })
-  return {
-    src,
-    press: (m: number) => send(m, true),
-    release: (m: number) => send(m, false),
-    /** Press and release, like tapping a key. */
-    tap: async (...ms: number[]) => {
-      for (const m of ms) await send(m, true)
-      for (const m of ms) await send(m, false)
-    },
-  }
-}
 
 // One bar of 4/4 at 120 bpm: RH C D E F quarters; LH C3 half, G2 half.
 async function piece(): Promise<ParsedPiece> {

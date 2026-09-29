@@ -57,7 +57,15 @@ Imported pieces and practice history stay in this browser's IndexedDB on your ma
 
 ## Also included
 
-- **Skills** — triad recall, inversions, scales/arpeggios, reading drills, and more  
+- **Skills**
+  - A **10-minute warmup** in a key that changes each day:
+    1. a scale and an arpeggio with fingering;
+    2. triads;
+    3. inversions;
+    4. a chord progression, played once with names and once from the numerals;
+    5. quick theory questions (intervals, key signatures, scale degrees, chord names).
+  - Each of these is also a drill on its own, alongside slash chords and left-hand patterns.
+  - With a MIDI keyboard everything is graded as you play.
 - **Color profiles** — Night, Parchment, High contrast, Forest (Settings)
 
 | Home | Settings |
