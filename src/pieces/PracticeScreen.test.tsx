@@ -211,26 +211,18 @@ describe('Perform mode', () => {
     expect(vi.mocked(playAccompaniment).mock.calls[1]![0].map((n) => n.midi)).toEqual([62])
   })
 
-  it('with one hand chosen and the switch off, only your hand plays', async () => {
-    const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }, { otherHand: false }))
-    for (const m of [30, 31, 32]) {
-      await kb.tap(m)
-      await later(500)
-    }
-    const played = vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi))
-    expect(played).toEqual([[60], [62], [64]])
-  })
-
-  it('with "Play the other hand for me" on, it comes along until your next note', async () => {
+  it('plays the whole song, both hands, whatever the hands setting, only on your presses', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }, { otherHand: true }))
+    expect(container.querySelector('[aria-label="Hands"]')).toBeNull()
     for (const m of [30, 31, 32]) {
       await kb.tap(m)
       await later(500)
     }
-    const played = vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi).sort())
-    expect(played).toEqual([[48, 60], [62], [43, 64]])
+    const calls = vi.mocked(playAccompaniment).mock.calls
+    expect(calls.map((c) => c[0].map((n) => n.midi).sort())).toEqual([[48, 60], [62], [43, 64]])
+    // Each press sounds its notes together, at the press: nothing trails it
+    for (const [notes, , from] of calls) expect(notes.every((n) => n.time === from)).toBe(true)
   })
 
   it("mutes the piano's own key sound while performing, and restores it after", async () => {
@@ -244,7 +236,7 @@ describe('Perform mode', () => {
 
   it('follows your pace: pressing twice as fast plays faster', async () => {
     const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }))
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
     await kb.tap(40)
     await later(250) // a beat (0.5 s at 120 bpm) in 0.25 s
     await kb.tap(40)
