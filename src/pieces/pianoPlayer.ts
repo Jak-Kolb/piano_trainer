@@ -1,4 +1,5 @@
 import * as Tone from 'tone'
+import { midiVoice, pianoOutput, type MidiOut, type MidiVoice } from './pianoOut'
 import type { PieceNote } from './types'
 import {
   dynamicToDb,
@@ -92,7 +93,42 @@ async function getSampler(): Promise<Tone.Sampler> {
   return loadPromise
 }
 
-type PartEv = { note: string; dur: number; vel: number }
+type PartEv = { note: string; dur: number; vel: number; midi: number; velocity: number }
+
+/** What sounds the notes: the sampler, or your piano over MIDI (Settings). */
+interface Voice {
+  /** The sampler when it's the one playing (for the song's overall level). */
+  sampler: Tone.Sampler | null
+  /** One note at Tone time `time`. */
+  play(ev: PartEv, time: number): void
+  releaseAll(): void
+}
+
+const midiVoices = new WeakMap<MidiOut, MidiVoice>()
+let lastMidiVoice: MidiVoice | null = null
+
+async function getVoice(): Promise<Voice> {
+  const out = await pianoOutput()
+  if (out) {
+    const v = midiVoices.get(out) ?? midiVoice(out)
+    midiVoices.set(out, v)
+    lastMidiVoice = v
+    await Tone.start()
+    return {
+      sampler: null,
+      // Tone time → the performance.now() clock MIDI timestamps use
+      play: (ev, time) =>
+        v.play(ev.midi, ev.velocity, performance.now() + (time - Tone.immediate()) * 1000, ev.dur * 1000),
+      releaseAll: () => v.releaseAll(),
+    }
+  }
+  const s = await getSampler()
+  return {
+    sampler: s,
+    play: (ev, time) => s.triggerAttackRelease(ev.note, ev.dur, time, ev.vel),
+    releaseAll: () => s.releaseAll(),
+  }
+}
 
 /**
  * Schedule for a demo: event times from the first note, lengths from the
@@ -121,6 +157,8 @@ export function demoEvents(
       note: midiToNoteName(n.midi),
       dur: Math.min(MAX_VOICE_SEC, Math.max(0.08, sounding / tempoFactor)),
       vel: velocityToGain(n.velocity ?? 0.7),
+      midi: n.midi,
+      velocity: n.velocity ?? 0.7,
     }
   })
   return { events, originSec, endSec }
@@ -138,7 +176,7 @@ export async function playPianoNotes(
   endSec: number
   startedAt: number
 }> {
-  const s = await getSampler()
+  const s = await getVoice()
   await Tone.start()
 
   // Clear any prior song schedule so Play song can re-run cleanly
@@ -149,17 +187,16 @@ export async function playPianoNotes(
 
   const { events, originSec, endSec } = demoEvents(notes, tempoPercent)
 
-  // Whole-demo level from the opening dynamic (mp song plays quieter than mf)
+  // Whole-demo level from the opening dynamic (mp song plays quieter than mf).
+  // Your own piano gets the note velocities instead.
   const sorted = [...notes].sort((a, b) => a.time - b.time || a.midi - b.midi)
   const openLabel = velocityToDynamic(meanVelocity(sorted.slice(0, 12)))
-  const baseDb = s.volume.value
-  s.volume.value = dynamicToDb(openLabel)
+  const baseDb = s.sampler?.volume.value ?? 0
+  if (s.sampler) s.sampler.volume.value = dynamicToDb(openLabel)
 
   // Tone.Part is the same voice engine as one-shot triggers, but cancels cleanly
   // and doesn't dump thousands of raw AudioParam events in one sync loop.
-  const part = new Tone.Part((time, ev: PartEv) => {
-    s.triggerAttackRelease(ev.note, ev.dur, time, ev.vel)
-  }, events)
+  const part = new Tone.Part((time, ev: PartEv) => s.play(ev, time), events)
   part.start(0)
 
   // Keep UI playhead aligned with audible attacks
@@ -180,7 +217,7 @@ export async function playPianoNotes(
       /* already disposed */
     }
     s.releaseAll()
-    s.volume.value = baseDb
+    if (s.sampler) s.sampler.volume.value = baseDb
     Tone.Transport.stop()
     Tone.Transport.cancel(0)
     Tone.Transport.seconds = 0
@@ -212,16 +249,20 @@ export async function playAccompaniment(
   fromSec: number,
 ): Promise<void> {
   if (!notes.length) return
-  const s = await getSampler()
+  const s = await getVoice()
   const tempoFactor = Math.max(0.25, tempoPercent / 100)
   const now = Tone.now() + 0.02
   for (const n of notes) {
     const sounding = (n.soundEnd ?? n.time + n.duration) - n.time
-    s.triggerAttackRelease(
-      midiToNoteName(n.midi),
-      Math.min(MAX_VOICE_SEC, Math.max(0.08, sounding / tempoFactor)),
+    s.play(
+      {
+        note: midiToNoteName(n.midi),
+        dur: Math.min(MAX_VOICE_SEC, Math.max(0.08, sounding / tempoFactor)),
+        vel: velocityToGain(n.velocity ?? 0.7),
+        midi: n.midi,
+        velocity: n.velocity ?? 0.7,
+      },
       now + Math.max(0, n.time - fromSec) / tempoFactor,
-      velocityToGain(n.velocity ?? 0.7),
     )
   }
 }
@@ -229,6 +270,7 @@ export async function playAccompaniment(
 /** Stop anything the sampler is sounding (accompaniment, previews). */
 export function silencePiano(): void {
   sampler?.releaseAll()
+  lastMidiVoice?.releaseAll()
 }
 
 let clickSynth: Tone.Synth | null = null
@@ -264,7 +306,7 @@ export interface PlayAlongPlan {
 export async function startPlayAlong(
   plan: PlayAlongPlan,
 ): Promise<{ startedAt: number; stop: () => void }> {
-  const s = await getSampler()
+  const s = await getVoice()
   await Tone.start()
   Tone.Transport.stop()
   Tone.Transport.cancel(0)
@@ -277,9 +319,10 @@ export async function startPlayAlong(
   const { events } = demoEvents(plan.notes, plan.tempoPercent)
   const firstNote = plan.notes.reduce((m, n) => Math.min(m, n.time), Infinity)
   const noteShift = Number.isFinite(firstNote) ? at(firstNote) : 0
-  const notePart = new Tone.Part((time, ev: PartEv) => {
-    s.triggerAttackRelease(ev.note, ev.dur, time, ev.vel)
-  }, events.map((e) => ({ ...e, time: e.time + noteShift })))
+  const notePart = new Tone.Part(
+    (time, ev: PartEv) => s.play(ev, time),
+    events.map((e) => ({ ...e, time: e.time + noteShift })),
+  )
   notePart.start(0)
 
   const click = getClickSynth()
