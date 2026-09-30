@@ -18,7 +18,8 @@ interface Props {
   tempoTarget: number | null
   onTempo: (t: number) => void
   hands: HandFilter
-  onHands: (h: HandFilter) => void
+  /** Not given in Perform, which always plays both hands (the control hides). */
+  onHands?: (h: HandFilter) => void
   range: { start: number; end: number } | null
   onClearRange: () => void
 }
@@ -147,27 +148,29 @@ export function TransportBar({
         />
       </label>
 
-      <div className="seg seg--small" role="radiogroup" aria-label="Hands">
-        {(
-          [
-            ['both', 'Both'],
-            ['right', 'RH'],
-            ['left', 'LH'],
-          ] as [HandFilter, string][]
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="radio"
-            aria-checked={hands === id}
-            disabled={busy}
-            className={`seg-btn${hands === id ? ' seg-btn--on' : ''}`}
-            onClick={() => onHands(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {onHands && (
+        <div className="seg seg--small" role="radiogroup" aria-label="Hands">
+          {(
+            [
+              ['both', 'Both'],
+              ['right', 'RH'],
+              ['left', 'LH'],
+            ] as [HandFilter, string][]
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={hands === id}
+              disabled={busy}
+              className={`seg-btn${hands === id ? ' seg-btn--on' : ''}`}
+              onClick={() => onHands(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

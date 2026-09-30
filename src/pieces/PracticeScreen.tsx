@@ -126,17 +126,19 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     (n: PieceNote): HandFilter => (staffOf(n) === 'treble' ? 'right' : 'left'),
     [staffOf],
   )
+  // Perform plays the whole song (both hands), whatever the hands setting.
+  const handsInUse: HandFilter = mode === 'perform' ? 'both' : hands
   const inRange = useMemo(
     () => parsed.notes.filter((n) => n.measure >= lo && n.measure <= hi),
     [parsed.notes, lo, hi],
   )
   const mine = useMemo(
-    () => (hands === 'both' ? inRange : inRange.filter((n) => handOf(n) === hands)),
-    [inRange, hands, handOf],
+    () => (handsInUse === 'both' ? inRange : inRange.filter((n) => handOf(n) === handsInUse)),
+    [inRange, handsInUse, handOf],
   )
   const others = useMemo(
-    () => (hands === 'both' ? [] : inRange.filter((n) => handOf(n) !== hands)),
-    [inRange, hands, handOf],
+    () => (handsInUse === 'both' ? [] : inRange.filter((n) => handOf(n) !== handsInUse)),
+    [inRange, handsInUse, handOf],
   )
   const steps = useMemo(
     () => groupSteps(mine, chordWindowSec(parsed.secPerQuarter)),
@@ -541,14 +543,10 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     else if (from > p.pieceSec) p.pace = nextPace(p.pace, from - p.pieceSec, at - p.at)
     p.at = at
     p.pieceSec = from
-    const next = L.steps[i + 1]
-    const to = next ? next[0]!.time : from + Math.max(...s.map((n) => n.duration))
-    const otherHand =
-      L.options.otherHand && L.hands !== 'both' ? accompanimentFor(L.others, from, to) : []
-    // The step sounds together, on your press (a rolled chord in the file
-    // would otherwise trail it).
+    // Only ever the step, all together, on your press (a rolled chord in the
+    // file would otherwise trail it); nothing is scheduled after it.
     const struck = s.map((n) => ({ ...n, time: from }))
-    void playAccompaniment(withTouch([...struck, ...otherHand], s, velocity), p.pace, from)
+    void playAccompaniment(withTouch(struck, s, velocity), p.pace, from)
     setShownPace(p.pace)
     if (i + 1 < L.steps.length) setStepIdx(i + 1)
     else if (L.options.repeatLoop) setStepIdx(0)
@@ -731,9 +729,9 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
 
   const status = (() => {
     if (!steps.length) {
-      return hands === 'both'
+      return handsInUse === 'both'
         ? 'No notes in this range.'
-        : `No ${hands === 'right' ? 'right' : 'left'}-hand notes in this range.`
+        : `No ${handsInUse === 'right' ? 'right' : 'left'}-hand notes in this range.`
     }
     if (mode === 'play') {
       if (countIn) return 'Count-in…'
@@ -819,7 +817,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
         tempoTarget={nextTempo}
         onTempo={setTempo}
         hands={hands}
-        onHands={setHands}
+        onHands={mode === 'perform' ? undefined : setHands}
         range={range}
         onClearRange={() => setRange(null)}
       />
@@ -841,7 +839,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
             measures={measures}
             polarity={polarity}
             onSystemsChange={setSystems}
-            dimStaff={hands === 'right' ? 'bass' : hands === 'left' ? 'treble' : null}
+            dimStaff={handsInUse === 'right' ? 'bass' : handsInUse === 'left' ? 'treble' : null}
             noteMarks={mode === 'play' ? marks : undefined}
           />
         )}
