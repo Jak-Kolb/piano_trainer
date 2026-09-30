@@ -340,14 +340,15 @@ function writtenEnds(
     } else if ((e - next) * 2 < ioi) {
       e = next
     } else {
-      // Sustained: snap a ragged release onto a nearby onset.
+      // Sustained: snap a ragged release onto a nearby onset (or the next
+      // beat when nothing follows), preferring one on a beat so a note let
+      // go just before the bar line still reaches it.
       const i = lowerBound(ons, e)
-      for (const o of [ons[i - 1], ons[i]]) {
-        if (o !== undefined && o > p.on && Math.abs(o - e) <= DUPLE_STEP) {
-          e = o
-          break
-        }
-      }
+      const near = [ons[i - 1], ons[i] ?? beatAfter(e)].filter(
+        (o): o is number => o !== undefined && o > p.on && Math.abs(o - e) <= DUPLE_STEP,
+      )
+      const snap = near.find((o) => beatAfter(o) === o) ?? near[0]
+      if (snap !== undefined) e = snap
     }
     return e
   })

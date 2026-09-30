@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chooseStep, notatePiece, TPQ, type NotatedVoice } from './notate'
 import { parseMidiArrayBuffer } from './parseMidi'
-import { synthMidi, type SynthOptions } from './testing/synthMidi'
+import { synthMidi, type SynthNote, type SynthOptions } from './testing/synthMidi'
 
 async function score(opts: SynthOptions) {
   const parsed = await parseMidiArrayBuffer(synthMidi(opts))
@@ -63,6 +63,29 @@ describe('notatePiece rhythm', () => {
     const held = v.find((x) => rhythm(x).startsWith('c/5'))!
     const moving = v.find((x) => rhythm(x).startsWith('e/4'))!
     expect([held.stem, moving.stem]).toEqual(['up', 'down'])
+  })
+
+  it('holds an octave released a little early to the barline (Interstellar bars 5–6)', async () => {
+    // 3/4: octave held 2.85 beats under an eighth-note ostinato, then again next bar
+    const bar = (at: number, lo: number, inner: [number, number]): SynthNote[] => [
+      [at, 2.85, lo, 0],
+      [at, 2.85, lo + 12, 0],
+      ...[0, 1, 2, 3, 4, 5].map((i): SynthNote => [at + i / 2, 0.47, inner[i % 2]!, 0]),
+    ]
+    const bars = await score({
+      timeSigs: [[0, 3, 4]],
+      // A left-hand note so hands split by track (A3 stays in the right hand)
+      notes: [...bar(0, 57, [64, 60]), ...bar(3, 59, [64, 62]), [0, 6, 45, 1]],
+    })
+    for (const [i, octave, eighths] of [
+      [0, 'a/3+a/4:h.', 'e/4:8 c/4:8 e/4:8 c/4:8 e/4:8 c/4:8'],
+      [1, 'b/3+b/4:h.', 'e/4:8 d/4:8 e/4:8 d/4:8 e/4:8 d/4:8'],
+    ] as const) {
+      const v = bars[i]!.staves.treble
+      expect(v.map(rhythm).sort()).toEqual([octave, eighths])
+      // Same stem layout both bars: octave up, eighths down
+      expect(v.find((x) => rhythm(x) === octave)!.stem).toBe('up')
+    }
   })
 
   it('writes sixteenth sextuplets', async () => {
