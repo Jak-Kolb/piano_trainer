@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InputSource } from '../../input'
 import { preloadPiano } from '../../pieces/pianoPlayer'
-import { formatNoteName } from '../../theory'
+import { formatNoteName, formatPitch } from '../../theory'
 import { playSequenceDemo } from '../drillMidi'
 import { hasKeyboard, useKeyboard, type RunResult } from './keyboard'
 import { Keys } from './shared'
@@ -13,11 +13,10 @@ interface Props {
   onDone: (r: RunResult) => void
 }
 
-const pc = (m: number) => ((m % 12) + 12) % 12
-
 /**
- * Scales and arpeggios note by note: each correct key (any octave) moves
- * on, wrong keys are counted. Without a keyboard, tick off each pass.
+ * Scales and arpeggios note by note: only the exact key (right octave)
+ * moves on, any other key counts as wrong. Without a keyboard, tick off
+ * each pass.
  */
 export function NoteRun({ input, passes, onDone }: Props) {
   const [passIdx, setPassIdx] = useState(0)
@@ -60,7 +59,7 @@ export function NoteRun({ input, passes, onDone }: Props) {
       const { passIdx: i, step: s } = state.current
       const want = passes[i]?.notes[s]
       if (!want) return
-      if (pc(midi) !== pc(want.midi)) {
+      if (midi !== want.midi) {
         setWrong((w) => w + 1)
         return
       }
@@ -99,7 +98,7 @@ export function NoteRun({ input, passes, onDone }: Props) {
         </div>
         <p className="run-hint">
           {keyboard && target
-            ? `Next: ${formatNoteName(target)}${pass.fingers ? ` with finger ${pass.fingers[step]}` : ''}`
+            ? `Next: ${formatPitch(target)}${pass.fingers ? ` with finger ${pass.fingers[step]}` : ''}`
             : 'Play it up and back down, then tick it off.'}
         </p>
         {keyboard && wrong > 0 && <p className="run-count">{wrong} wrong so far</p>}
@@ -108,7 +107,7 @@ export function NoteRun({ input, passes, onDone }: Props) {
         held={held}
         targets={target ? [target.midi] : []}
         showTargets
-        wantPcs={target ? [pc(target.midi)] : []}
+        exact
         hand={pass.hand}
       />
       <div className="run-actions">

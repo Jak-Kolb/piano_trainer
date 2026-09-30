@@ -8,7 +8,7 @@ import { PROGRESSIONS } from '../../theory'
 import { ChordRun } from './ChordRun'
 import { NoteRun } from './NoteRun'
 import type { RunResult } from './keyboard'
-import { inversionTasks, progressionTasks, scalePasses } from './tasks'
+import { arpeggioPasses, inversionTasks, progressionTasks, scalePasses } from './tasks'
 import { TheoryRun } from './TheoryRun'
 import type { TheoryQuestion } from './theoryQuiz'
 
@@ -48,12 +48,12 @@ describe('NoteRun (scales)', () => {
     const done = vi.fn<(r: RunResult) => void>()
     await mount(<NoteRun input={kb.src} passes={scalePasses('C major')} onDone={done} />)
     expect(text()).toContain('C major scale · right hand')
-    expect(text()).toContain('Next: C with finger 1')
+    expect(text()).toContain('Next: C4 with finger 1')
 
     const up = [60, 62, 64, 65, 67, 69, 71, 72]
     const down = [71, 69, 67, 65, 64, 62, 60]
     for (const m of up) await kb.tap(m)
-    expect(text()).toContain('Next: B with finger 4') // the way down
+    expect(text()).toContain('Next: B4 with finger 4') // the way down
     for (const m of down) await kb.tap(m)
     expect(text()).toContain('left hand')
 
@@ -63,11 +63,23 @@ describe('NoteRun (scales)', () => {
     expect(done).toHaveBeenCalledWith(expect.objectContaining({ line: '2 runs · 1 wrong note' }))
   })
 
-  it('accepts the right note in any octave', async () => {
+  it('needs the exact key: the same note in another octave is wrong', async () => {
     const kb = fakeKeyboard()
     await mount(<NoteRun input={kb.src} passes={scalePasses('G major')} onDone={() => {}} />)
-    await kb.tap(43) // G2 for G4
-    expect(text()).toContain('Next: A')
+    await kb.tap(55) // G3 for G4
+    expect(text()).toContain('Next: G4')
+    expect(text()).toContain('1 wrong so far')
+    await kb.tap(67)
+    expect(text()).toContain('Next: A4')
+  })
+
+  it('arpeggios need the exact key too', async () => {
+    const kb = fakeKeyboard()
+    await mount(<NoteRun input={kb.src} passes={arpeggioPasses('C major')} onDone={() => {}} />)
+    await kb.tap(60)
+    await kb.tap(76) // E5 for E4
+    expect(text()).toContain('Next: E4 with finger 2')
+    expect(text()).toContain('1 wrong so far')
   })
 })
 
