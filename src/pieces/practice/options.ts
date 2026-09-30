@@ -24,11 +24,11 @@ export interface PracticeOptions {
   rememberSettings: boolean
   /** Log practice time, mistakes per bar and clean runs. */
   trackStats: boolean
-  /** Perform: press for every new note, or down to eighths (faster notes play by themselves). */
+  /** Perform: press for every new note, or assisted (down to eighths; faster notes play by themselves). */
   performTap: PerformTap
 }
 
-export type PerformTap = 'note' | 'eighth'
+export type PerformTap = 'note' | 'assisted'
 
 export const DEFAULT_OPTIONS: PracticeOptions = {
   otherHand: false,

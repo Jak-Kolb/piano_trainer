@@ -33,8 +33,9 @@ import { createGrader, type Grade, type Grader, type RunSummary as Summary } fro
 import { accompanimentFor, classifyHeld, isWrongNote } from './practice/learn'
 import { clickTimes, countInClicks } from './practice/metronome'
 import {
-  chordWindowMs,
+  tooSoonMs,
   followPace,
+  PERFORM_CHORD_SEC,
   pressPlan,
   pressPoints,
   TAP_GAP_MS,
@@ -153,8 +154,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     [inRange, handsInUse, handOf],
   )
   const steps = useMemo(
-    () => groupSteps(mine, chordWindowSec(parsed.secPerQuarter)),
-    [mine, parsed.secPerQuarter],
+    () => groupSteps(mine, mode === 'perform' ? PERFORM_CHORD_SEC : chordWindowSec(parsed.secPerQuarter)),
+    [mine, mode, parsed.secPerQuarter],
   )
 
   // ——— Cursor: the step you're on (Learn), or where playback starts ———
@@ -207,10 +208,11 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     pieceSec: 0,
     pace,
     msPerSec: null as number | null,
-    chordMs: TAP_GAP_MS,
+    /** Presses sooner than this after the last are ignored. */
+    ignoreMs: TAP_GAP_MS,
   })
   const performed = useRef(freshPerform(initial.tempoPercent))
-  // Eighths: which steps take a press, and the faster notes of the last
+  // Assisted: which steps take a press, and the faster notes of the last
   // press still to come (dropped if you press again first).
   const presses = useMemo(() => pressPoints(steps, measures), [steps, measures])
   const autoTimers = useRef<number[]>([])
@@ -560,12 +562,14 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     [recordPass],
   )
 
-  // ——— Perform: any key plays the next notes (and, with Eighths, the faster
+  // ——— Perform: any key plays the next notes (and, with Assisted, the faster
   // notes after them) ———
   const performTap = useCallback((velocity: number | null, at: number) => {
     const L = latest.current
     const p = performed.current
-    if (p.at !== null && at - p.at < p.chordMs) return // the rest of the same chord
+    // Too soon after the last press: the rest of a chord, a double hit, or
+    // just faster than the music (it would race ahead). Ignored.
+    if (p.at !== null && at - p.at < p.ignoreMs) return
     const i = L.stepIdx >= L.steps.length ? 0 : L.stepIdx
     const s = L.steps[i]
     if (!s) return
@@ -579,10 +583,10 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     setShownPace(p.pace)
     clearAutoNotes() // what's left of the last press is dropped: you're on the next note
 
-    const eighths = L.options.performTap === 'eighth'
+    const assisted = L.options.performTap === 'assisted'
     const m = measureInfoAt(measures, s[0]!.measure)
     const eighthSec = m.durationSec / Math.max(0.25, barQuarters(m)) / 2
-    const plan = eighths
+    const plan = assisted
       ? pressPlan(L.steps, i, L.presses, eighthSec)
       : { groups: [{ offset: 0, notes: s }], nextStep: i + 1 }
     const factor = Math.max(0.25, p.pace / 100)
@@ -595,7 +599,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
       else autoTimers.current.push(window.setTimeout(strike, (g.offset / factor) * 1000))
     }
     const next = L.steps[plan.nextStep]
-    p.chordMs = chordWindowMs(next ? next[0]!.time - from : 0, p.pace)
+    p.ignoreMs = tooSoonMs(next ? next[0]!.time - from : 0, p.pace)
     if (plan.nextStep < L.steps.length) setStepIdx(plan.nextStep)
     else setStepIdx(L.options.repeatLoop ? 0 : L.steps.length)
   }, [measures])
@@ -827,7 +831,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
       if (finished) return 'The end · press any key to play it again'
       const how = hasMidi ? 'press any key' : 'press Space or Tap'
       if (shownPace === null) {
-        const fast = options.performTap === 'eighth' ? ' 16ths and faster play by themselves.' : ''
+        const fast = options.performTap === 'assisted' ? ' 16ths and faster play by themselves.' : ''
         return hasMidi
           ? `Bar ${cursorBar} · ${how} to play the next notes.${fast} Your piano’s own key sound is off while you perform (if you still hear it, turn Local Control off on the piano).`
           : `Bar ${cursorBar} · ${how} to play the next notes.${fast}`
@@ -894,7 +898,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
         onTempo={setTempo}
         hands={hands}
         onHands={mode === 'perform' ? undefined : setHands}
-        tap={options.performTap === 'eighth' ? 'eighth' : 'note'}
+        tap={options.performTap === 'assisted' ? 'assisted' : 'note'}
         onTap={
           mode === 'perform'
             ? (t) => {

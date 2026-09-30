@@ -347,7 +347,7 @@ describe('Choosing bars', () => {
   })
 })
 
-describe('Perform: Eighths', () => {
+describe('Perform: Assisted', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] })
   })
@@ -366,7 +366,7 @@ describe('Perform: Eighths', () => {
       }),
     )
     const kb = fakeKeyboard()
-    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'eighth' }))
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'assisted' }))
     expect(status()).toContain('16ths and faster play by themselves')
 
     // Pressed at the written speed: an eighth is 250 ms, a 16th 125 ms
@@ -388,22 +388,44 @@ describe('Perform: Eighths', () => {
 
   it('pressing again before the fast notes have played drops them: you stay on time', async () => {
     const parsed = await parseMidiArrayBuffer(
-      synthMidi({ notes: [...notes([0, 0.25, 60], [0.25, 0.25, 62], [0.5, 0.5, 64]), [0, 2, 48, 1]] }),
+      synthMidi({ notes: [...notes([0, 0.375, 60], [0.375, 0.125, 62], [0.5, 0.5, 64]), [0, 2, 48, 1]] }),
     )
     const kb = fakeKeyboard()
-    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'eighth' }))
-    await kb.press(30) // C, with the 16th D after it
-    await later(100) // before D (due at 125 ms): press for E
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'assisted' }))
+    await kb.press(30) // C, with the fast D after it (due at 187 ms)
+    await later(150) // before D: press for E (the eighth, due at 250 ms)
     await kb.press(31)
     await later(1000)
     expect(played()).toEqual([[48, 60], [64]])
   })
 
-  it('switching to Eighths in the bar', async () => {
+  it('two keys pressed quickly back to back are one press: it doesn’t race ahead', async () => {
+    // Eighths C D E F with 32nds after C (Piano Man-style); an eighth is 250 ms
+    const parsed = await parseMidiArrayBuffer(
+      synthMidi({
+        notes: [
+          ...notes([0, 0.125, 60], [0.125, 0.125, 61], [0.25, 0.25, 62], [0.5, 0.5, 64], [1, 0.5, 65], [1.5, 0.5, 67]),
+          [0, 2, 48, 1],
+        ],
+      }),
+    )
+    const kb = fakeKeyboard()
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'assisted' }))
+    await kb.press(30)
+    await later(90) // a second key, far too soon
+    await kb.press(31)
+    await later(300)
+    expect(played()).toEqual([[48, 60], [61], [62]]) // C and its 32nds only
+    await kb.press(32) // the next eighth, in time
+    expect(played().at(-1)).toEqual([64])
+    expect(vi.mocked(playAccompaniment).mock.calls.at(-1)![1]).toBeLessThan(150) // the pace didn't jump
+  })
+
+  it('switching to Assisted in the bar', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
-    await act(async () => button('Eighths').click())
-    expect(button('Eighths').getAttribute('aria-checked')).toBe('true')
+    await act(async () => button('Assisted').click())
+    expect(button('Assisted').getAttribute('aria-checked')).toBe('true')
     expect(status()).toContain('16ths and faster play by themselves')
   })
 })
