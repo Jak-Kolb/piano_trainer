@@ -49,7 +49,7 @@ export function SettingsScreen({
         <section className="space-y-3">
           <h2 className="font-display text-lg text-ivory">Play sound through</h2>
           <p className="font-ui text-sm text-dust">
-            Listen, the other hand in play-along, and “Hear it”. The metronome stays on this computer.
+            Listen, Perform, the other hand in play-along, and “Hear it”. The metronome stays on this computer.
           </p>
           <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Play sound through">
             {soundOptions.map((o) => (
@@ -62,7 +62,7 @@ export function SettingsScreen({
                   setSound(o.id)
                   saveSoundOutput(o.id)
                 }}
-                className={`surface-card px-3 py-3 text-left ${sound === o.id ? 'ring-2 ring-brass' : ''}`}
+                className={`surface-card px-3 py-3 text-left ${sound === o.id ? 'surface-card--on' : ''}`}
               >
                 <p className="font-ui text-sm text-ivory">{o.label}</p>
                 <p className="font-ui text-xs text-dust">{o.blurb}</p>
@@ -85,7 +85,7 @@ export function SettingsScreen({
                   type="button"
                   onClick={() => onColorProfile(p.id)}
                   className={`surface-card px-3 py-3 text-left ${
-                    selected ? 'ring-2 ring-brass' : ''
+                    selected ? 'surface-card--on' : ''
                   }`}
                 >
                   <div className="mb-2 flex gap-1">

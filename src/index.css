@@ -212,6 +212,15 @@ body {
   transform: translateY(1px);
 }
 
+/* Selected card (a Tailwind ring can't show: the card's own shadow wins). */
+.surface-card--on,
+.surface-card--on:hover {
+  border-color: var(--color-brass);
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 1px var(--color-brass);
+}
+
 .surface-inset {
   background: color-mix(in srgb, var(--color-shadow) 55%, var(--color-ink) 45%);
   border: 1px solid var(--color-panel-border);

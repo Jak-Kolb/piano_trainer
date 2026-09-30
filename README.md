@@ -1,6 +1,8 @@
 # Keys
 
-A music-stand piano practice app focused on **MIDI playthrough**: import a piece, read real sheet music, and practise it on a USB keyboard. Learn it step by step, play along in time with grading, or listen to it.
+A music-stand piano practice app focused on **MIDI playthrough**: import a piece, read real sheet music, and practise it on a USB keyboard. Learn it step by step, play along in time with grading, listen to it, or perform it with any keys.
+
+**Open it in Chrome: https://jak-kolb.github.io/piano_trainer/** (use Chrome's Install button in the address bar to give it its own window and icon).
 
 ![Playthrough](docs/screenshots/04-playthrough.png)
 
@@ -22,6 +24,7 @@ Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but
    - **Learn** waits for you to play each step on your keyboard. You can hear a bar or a line first.
    - **Play along** keeps time with a metronome and a one-bar count-in. It grades every note as on time, early, late, missed or wrong, colours the noteheads, and ends with a results card.
    - **Listen** plays the piece, a bar or a line, with the sustain pedal.
+   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. Pick RH or LH to tap just that hand's rhythm while the other hand fills in. (Turn the piano's Local Control off so only the music sounds.)
 3. Choose **RH / LH / Both** and the tempo. Drag on the **bar strip** under the sheet (or shift-click bars) to practise part of the piece. Click it to jump. **← →** move by bar, and **Space** plays, pauses or skips.
 
 **Practice options** (top right) are switches, saved with each piece:
@@ -45,7 +48,7 @@ The sheet music is engraved from the MIDI file:
 
 The **Pieces** list shows how practice is going, including the date of your first clean play-through of each piece.
 
-Imported pieces and practice history stay in this browser's IndexedDB on your machine. They are not uploaded anywhere.
+Imported pieces and practice history stay in this browser's IndexedDB on your machine. They are not uploaded anywhere. Each address keeps its own copy: the hosted site, `npm start` (127.0.0.1:5173) and `npm run dev` (localhost:5173) don't share pieces or history.
 
 | Sheet (light on dark) | Sheet (dark on light) |
 | --- | --- |
@@ -67,6 +70,7 @@ Imported pieces and practice history stay in this browser's IndexedDB on your ma
   - Each of these is also a drill on its own, alongside slash chords and left-hand patterns.
   - With a MIDI keyboard everything is graded as you play.
 - **Color profiles** — Night, Parchment, High contrast, Forest (Settings)
+- **Play sound through your piano** (Settings): Listen, the other hand, Perform and every “Hear it” go out over USB-MIDI to your own piano instead of the computer speakers
 
 | Home | Settings |
 | --- | --- |
@@ -98,6 +102,10 @@ npm run build  # production build
 ```
 
 macOS: after `npm install`, you can double-click `scripts/Keys.command`.
+
+## Publishing
+
+Every push to `main` runs the tests, builds, and publishes the site to GitHub Pages (`.github/workflows/pages.yml`). A failing test stops the deploy and the old version stays up.
 
 ## Stack
 
