@@ -287,14 +287,22 @@ describe('Perform mode', () => {
     expect(vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi))).toEqual([[48, 60], [62]])
   })
 
-  it('follows your pace: pressing twice as fast plays faster', async () => {
+  it('follows your pace from the second press, faster or much slower', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
     await kb.tap(40)
     await later(250) // a beat (0.5 s at 120 bpm) in 0.25 s
     await kb.tap(40)
-    const pace = vi.mocked(playAccompaniment).mock.calls[1]![1]
-    expect(pace).toBeCloseTo(150) // halfway from 100% towards 200%
+    expect(vi.mocked(playAccompaniment).mock.calls[1]![1]).toBeCloseTo(200)
+  })
+
+  it('slow presses slow it down, even far below the written tempo', async () => {
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
+    await kb.tap(40)
+    await later(1600) // a beat in 1.6 s: under a third of the speed
+    await kb.tap(40)
+    expect(vi.mocked(playAccompaniment).mock.calls[1]![1]).toBeCloseTo(31.25)
   })
 })
 
@@ -339,63 +347,66 @@ describe('Choosing bars', () => {
   })
 })
 
-describe('Perform: every beat', () => {
+describe('Perform: Eighths', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] })
   })
   const later = (ms: number) => act(async () => void vi.advanceTimersByTime(ms))
   const played = () => vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi).sort())
+  const notes = (...ns: [number, number, number][]) => ns.map(([b, l, m]) => [b, l, m, 0] as [number, number, number, number])
 
-  it('one press per beat: the notes inside it come by themselves; pressing early drops the rest', async () => {
-    // 4/4 at 120 bpm (a beat is 0.5 s): eighths C D E F G A in the right hand, C3 held below
+  it('eighth notes each take a press; the 16ths between them play by themselves', async () => {
+    // 4/4 at 120 bpm (a quarter is 0.5 s): eighth C, eighth D, then 16ths E F G A
     const parsed = await parseMidiArrayBuffer(
       synthMidi({
         notes: [
-          ...[60, 62, 64, 65, 67, 69].map((m, i) => [i * 0.5, 0.5, m, 0] as [number, number, number, number]),
+          ...notes([0, 0.5, 60], [0.5, 0.5, 62], [1, 0.25, 64], [1.25, 0.25, 65], [1.5, 0.25, 67], [1.75, 0.25, 69]),
           [0, 4, 48, 1],
         ],
       }),
     )
     const kb = fakeKeyboard()
-    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'beat' }))
-    expect(status()).toContain('on each beat')
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'eighth' }))
+    expect(status()).toContain('16ths and faster play by themselves')
 
+    // Pressed at the written speed: an eighth is 250 ms, a 16th 125 ms
     await kb.press(30)
-    expect(played()).toEqual([[48, 60]]) // on the beat, on the press
     await later(250)
-    expect(played()).toEqual([[48, 60], [62]]) // the "and", by itself
+    expect(played()).toEqual([[48, 60]]) // the eighth after it waits for you
+    await kb.press(31)
     await later(250)
-    await kb.press(31) // beat 2, on time
-    expect(played().at(-1)).toEqual([64])
-    await later(200)
-    await kb.press(32) // beat 3, early: F (still to come) is dropped
-    await later(1000)
-    expect(played()).toEqual([[48, 60], [62], [64], [67], [69]])
-  })
-
-  it('a beat with nothing new (a held note) is a silent press that keeps the pulse', async () => {
-    // A whole-note C, then a quarter-note D in the next bar
-    const parsed = await parseMidiArrayBuffer(synthMidi({ notes: [[0, 4, 60, 0], [4, 1, 62, 0], [0, 5, 48, 1]] }))
-    const kb = fakeKeyboard()
-    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'beat' }))
-    for (let i = 0; i < 4; i++) {
-      await kb.press(30 + i)
-      await later(500)
-    }
-    expect(played()).toEqual([[48, 60]])
-    await kb.press(40)
     expect(played()).toEqual([[48, 60], [62]])
+    await kb.press(32) // E, then F by itself
+    expect(played().at(-1)).toEqual([64])
+    await later(150)
+    expect(played().at(-1)).toEqual([65])
+    await later(100)
+    await kb.press(33) // G, then A by itself
+    await later(1000)
+    expect(played()).toEqual([[48, 60], [62], [64], [65], [67], [69]])
   })
 
-  it('switching to "Every beat" in the bar', async () => {
+  it('pressing again before the fast notes have played drops them: you stay on time', async () => {
+    const parsed = await parseMidiArrayBuffer(
+      synthMidi({ notes: [...notes([0, 0.25, 60], [0.25, 0.25, 62], [0.5, 0.5, 64]), [0, 2, 48, 1]] }),
+    )
+    const kb = fakeKeyboard()
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'eighth' }))
+    await kb.press(30) // C, with the 16th D after it
+    await later(100) // before D (due at 125 ms): press for E
+    await kb.press(31)
+    await later(1000)
+    expect(played()).toEqual([[48, 60], [64]])
+  })
+
+  it('switching to Eighths in the bar', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
-    await act(async () => button('Every beat').click())
-    expect(button('Every beat').getAttribute('aria-checked')).toBe('true')
-    expect(status()).toContain('on each beat')
+    await act(async () => button('Eighths').click())
+    expect(button('Eighths').getAttribute('aria-checked')).toBe('true')
+    expect(status()).toContain('16ths and faster play by themselves')
   })
 })
-
 describe('Renaming a piece', () => {
   const setValue = (el: HTMLInputElement, v: string) => {
     // React tracks the value: set it through the native setter so onChange fires

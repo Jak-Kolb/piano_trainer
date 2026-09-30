@@ -158,7 +158,7 @@ export function TransportBar({
           {(
             [
               ['note', 'Every note', 'Press for each new note'],
-              ['beat', 'Every beat', 'Press a steady beat; the notes inside each beat play by themselves'],
+              ['eighth', 'Eighths', 'Press for every note down to eighth notes; 16ths and 32nds play by themselves'],
             ] as [PerformTap, string, string][]
           ).map(([id, label, hint]) => (
             <button
