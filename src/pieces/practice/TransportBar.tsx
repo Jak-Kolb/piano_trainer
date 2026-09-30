@@ -27,6 +27,7 @@ const MODES: [PracticeMode, string, string][] = [
   ['learn', 'Learn', 'Waits for you to play each step'],
   ['play', 'Play along', 'Keeps time; grades each note'],
   ['listen', 'Listen', 'Hear the piece played'],
+  ['perform', 'Perform', 'Any key plays the next notes, in your rhythm and touch'],
 ]
 
 /** One row: mode, what to do in it, the range, tempo and hands. */
@@ -67,7 +68,7 @@ export function TransportBar({
       </div>
 
       <div className="transport-actions">
-        {mode === 'learn' && run === 'idle' && (
+        {(mode === 'learn' || mode === 'perform') && run === 'idle' && (
           <>
             <button type="button" className="btn btn-secondary h-9" onClick={() => onPreview('bar')}>
               Hear bar
@@ -77,7 +78,7 @@ export function TransportBar({
             </button>
           </>
         )}
-        {mode !== 'learn' && run === 'idle' && (
+        {(mode === 'play' || mode === 'listen') && run === 'idle' && (
           <button type="button" className="btn btn-primary h-9 px-5" onClick={onPlay}>
             {mode === 'play' ? 'Start' : 'Play'}
           </button>

@@ -184,3 +184,48 @@ describe('Play along', () => {
     expect(card).toContain('behind the beat')
   })
 })
+
+describe('Perform mode', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['performance'] })
+  })
+  const later = (ms: number) => act(async () => void vi.advanceTimersByTime(ms))
+
+  it('any key plays the next notes with your touch; a chord bang is one press', async () => {
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
+    expect(status()).toContain('press any key')
+
+    await kb.tap(90, 91, 92) // three wrong keys at once
+    expect(playAccompaniment).toHaveBeenCalledTimes(1)
+    const [notes, tempo, from] = vi.mocked(playAccompaniment).mock.calls[0]!
+    expect(notes.map((n) => n.midi).sort()).toEqual([48, 60]) // C3 + C4, both hands
+    expect([tempo, from]).toEqual([100, 0])
+    expect(notes.every((n) => Math.abs(n.velocity - 0.7) < 0.02)).toBe(true) // pressed at 0.7
+
+    await later(500)
+    await kb.tap(20)
+    expect(vi.mocked(playAccompaniment).mock.calls[1]![0].map((n) => n.midi)).toEqual([62])
+  })
+
+  it('with one hand chosen, the other hand comes along until your next note', async () => {
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }))
+    for (const m of [30, 31, 32]) {
+      await kb.tap(m)
+      await later(500)
+    }
+    const played = vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi).sort())
+    expect(played).toEqual([[48, 60], [62], [43, 64]])
+  })
+
+  it('follows your pace: pressing twice as fast plays faster', async () => {
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }))
+    await kb.tap(40)
+    await later(250) // a beat (0.5 s at 120 bpm) in 0.25 s
+    await kb.tap(40)
+    const pace = vi.mocked(playAccompaniment).mock.calls[1]![1]
+    expect(pace).toBeCloseTo(150) // halfway from 100% towards 200%
+  })
+})
