@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { midiVoice, type MidiOut } from './pianoOut'
+import { midiVoice, setLocalControl, type MidiOut } from './pianoOut'
 
 let clock = 0
 let sent: { data: number[]; at?: number; sentAt: number }[] = []
@@ -63,5 +63,27 @@ describe('midiVoice', () => {
     v.play(60, 0, 1000, 10)
     v.play(62, 2, 1000, 10)
     expect(sent.filter((m) => m.data[0] === 0x90).map((m) => m.data[2])).toEqual([1, 127])
+  })
+})
+
+describe('setLocalControl', () => {
+  it('tells every connected output to stop (and start) sounding its own keys', async () => {
+    const got: number[][] = []
+    const piano: MidiOut = { send: (d) => void got.push(d) }
+    vi.stubGlobal('navigator', {
+      requestMIDIAccess: async () => ({
+        outputs: new Map([['kawai', piano]]),
+        addEventListener() {},
+        removeEventListener() {},
+      }),
+    })
+    setLocalControl(false)
+    await vi.waitFor(() => expect(got).toHaveLength(1))
+    setLocalControl(true) // access is cached now: sent straight away
+    expect(got).toEqual([
+      [0xb0, 122, 0],
+      [0xb0, 122, 127],
+    ])
+    vi.unstubAllGlobals()
   })
 })

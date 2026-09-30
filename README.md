@@ -24,7 +24,7 @@ Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but
    - **Learn** waits for you to play each step on your keyboard. You can hear a bar or a line first.
    - **Play along** keeps time with a metronome and a one-bar count-in. It grades every note as on time, early, late, missed or wrong, colours the noteheads, and ends with a results card.
    - **Listen** plays the piece, a bar or a line, with the sustain pedal.
-   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. Pick RH or LH to tap just that hand's rhythm while the other hand fills in. (Turn the piano's Local Control off so only the music sounds.)
+   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. Pick RH or LH to tap just that hand's rhythm while the other hand fills in. Keys switches the piano's Local Control off while you perform, so only the music sounds, and back on when you leave; if your piano ignores that, turn Local Control off on the piano.
 3. Choose **RH / LH / Both** and the tempo. Drag on the **bar strip** under the sheet (or shift-click bars) to practise part of the piece. Click it to jump. **← →** move by bar, and **Space** plays, pauses or skips.
 
 **Practice options** (top right) are switches, saved with each piece:

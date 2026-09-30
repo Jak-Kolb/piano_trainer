@@ -21,6 +21,7 @@ import {
   savePieceState,
   saveSession,
 } from './pieceStore'
+import { setLocalControl } from './pianoOut'
 import {
   playAccompaniment,
   preloadPiano,
@@ -543,12 +544,31 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     const next = L.steps[i + 1]
     const to = next ? next[0]!.time : from + Math.max(...s.map((n) => n.duration))
     const otherHand = L.hands === 'both' ? [] : accompanimentFor(L.others, from, to)
-    void playAccompaniment(withTouch([...s, ...otherHand], s, velocity), p.pace, from)
+    // The step sounds together, on your press (a rolled chord in the file
+    // would otherwise trail it).
+    const struck = s.map((n) => ({ ...n, time: from }))
+    void playAccompaniment(withTouch([...struck, ...otherHand], s, velocity), p.pace, from)
     setShownPace(p.pace)
     if (i + 1 < L.steps.length) setStepIdx(i + 1)
     else if (L.options.repeatLoop) setStepIdx(0)
     else setStepIdx(L.steps.length)
   }, [])
+
+  // Perform: the piano stops sounding the keys you press (only the music
+  // plays); back on when you leave the mode, the piece, or the page.
+  useEffect(() => {
+    if (mode !== 'perform' || !hasMidi) return
+    const mute = () => setLocalControl(false)
+    const restore = () => setLocalControl(true)
+    mute()
+    window.addEventListener('pagehide', restore)
+    window.addEventListener('pageshow', mute) // back from the browser's page cache
+    return () => {
+      window.removeEventListener('pagehide', restore)
+      window.removeEventListener('pageshow', mute)
+      restore()
+    }
+  }, [mode, hasMidi])
 
   useEffect(() => {
     if (!hasMidi) return
@@ -733,7 +753,9 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
       if (finished) return 'The end · press any key to play it again'
       const how = hasMidi ? 'press any key' : 'press Space or Tap'
       if (shownPace === null) {
-        return `Bar ${cursorBar} · ${how} to play the next notes. Tip: turn your piano’s Local Control off so only the music sounds.`
+        return hasMidi
+          ? `Bar ${cursorBar} · ${how} to play the next notes. Your piano’s own key sound is off while you perform (if you still hear it, turn Local Control off on the piano).`
+          : `Bar ${cursorBar} · ${how} to play the next notes.`
       }
       return `Bar ${cursorBar} · ${how} · ${Math.round(shownPace)}% pace`
     }
