@@ -119,6 +119,8 @@ export interface MidiVoice {
   play(midi: number, velocity: number, atMs: number, durMs: number): void
   /** Cancel what's queued and stop everything sounding. */
   releaseAll(): void
+  /** The sustain pedal down or up, on the piano. */
+  sustain(down: boolean): void
 }
 
 /**
@@ -129,6 +131,8 @@ export interface MidiVoice {
  */
 export function midiVoice(out: MidiOut, now: () => number = () => performance.now()): MidiVoice {
   const pending = new Set<ReturnType<typeof setTimeout>>()
+  /** The app put the sustain pedal down (so stopping lifts it; your own pedal is left alone). */
+  let sustaining = false
   /** Pitch → the strike that owns it now. */
   const sounding = new Map<number, number>()
   let strikes = 0
@@ -166,7 +170,13 @@ export function midiVoice(out: MidiOut, now: () => number = () => performance.no
       pending.clear()
       for (const midi of sounding.keys()) out.send([0x80, midi, 0])
       sounding.clear()
+      if (sustaining) out.send([0xb0, 64, 0]) // notes held by the pedal would ring on
+      sustaining = false
       out.send([0xb0, 123, 0]) // all notes off
+    },
+    sustain(down) {
+      sustaining = down
+      out.send([0xb0, 64, down ? 127 : 0])
     },
   }
 }

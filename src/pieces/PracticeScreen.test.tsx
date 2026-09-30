@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InputSource } from '../input'
 import { parseMidiArrayBuffer } from './parseMidi'
 import { setLocalControl } from './pianoOut'
-import { playAccompaniment, startPlayAlong } from './pianoPlayer'
+import { playAccompaniment, setSustainPedal, startPlayAlong } from './pianoPlayer'
 import { DEFAULT_OPTIONS, type PieceState, type PracticeOptions } from './practice/options'
 import { PracticeScreen } from './PracticeScreen'
 import { fakeKeyboard } from './testing/fakeKeyboard'
@@ -28,6 +28,7 @@ vi.mock('./pianoPlayer', () => ({
     startedAt: performance.now(),
   })),
   preloadPiano: vi.fn(),
+  setSustainPedal: vi.fn(),
   silencePiano: vi.fn(),
   startPlayAlong: vi.fn(async () => ({ startedAt: performance.now(), stop: vi.fn() })),
 }))
@@ -285,6 +286,26 @@ describe('Perform mode', () => {
     await later(300)
     await kb.press(67) // the next note
     expect(vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi))).toEqual([[48, 60], [62]])
+  })
+
+  it('your sustain pedal works: passed on, and once used the notes last as long as their keys', async () => {
+    vi.mocked(setSustainPedal).mockClear()
+    const parsed = await parseMidiArrayBuffer(
+      synthMidi({ notes: [[0, 0.5, 60, 0], [1, 0.5, 62, 0], [0, 2, 48, 1]], pedal: [[0, 4, 0], [0, 4, 1]] }),
+    )
+    const kb = fakeKeyboard()
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }))
+    await kb.press(30)
+    // Before you pedal, the piece's pedalling holds its notes
+    expect(vi.mocked(playAccompaniment).mock.calls[0]![0].every((n) => n.soundEnd !== undefined)).toBe(true)
+    await kb.pedal(true)
+    expect(vi.mocked(setSustainPedal).mock.calls).toEqual([[true]])
+    await later(500)
+    await kb.press(31)
+    expect(vi.mocked(playAccompaniment).mock.calls[1]![0].every((n) => n.soundEnd === undefined)).toBe(true)
+    await kb.pedal(false)
+    await act(async () => button('Learn').click()) // leaving Perform lifts it
+    expect(vi.mocked(setSustainPedal).mock.calls).toEqual([[true], [false], [false]])
   })
 
   it('follows your pace from the second press, faster or much slower', async () => {

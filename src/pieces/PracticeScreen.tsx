@@ -25,6 +25,7 @@ import { setLocalControl } from './pianoOut'
 import {
   playAccompaniment,
   preloadPiano,
+  setSustainPedal,
   silencePiano,
   startPlayAlong,
 } from './pianoPlayer'
@@ -218,6 +219,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     of: null as PieceNote[][] | null,
   })
   const performed = useRef(freshPerform(initial.tempoPercent))
+  /** You've used your sustain pedal in Perform: notes last as long as their keys, and it holds them. */
+  const yourPedal = useRef(false)
   // Assisted: which steps take a press, and the faster notes of the last
   // press still to come (dropped if you press again first).
   const presses = useMemo(() => pressPoints(steps, measures), [steps, measures])
@@ -610,8 +613,9 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     plan.groups.forEach((g, k) => {
       // A chord sounds all together (a rolled chord in the file would trail).
       const time = from + g.offset
-      const strike = () =>
-        void playAccompaniment(withTouch(g.notes.map((n) => ({ ...n, time })), s, velocity), p.pace, time)
+      // Once your pedal is in play, the piece's own pedalling stops (it's yours).
+      const struck = g.notes.map((n) => ({ ...n, time, soundEnd: yourPedal.current ? undefined : n.soundEnd }))
+      const strike = () => void playAccompaniment(withTouch(struck, s, velocity), p.pace, time)
       if (k === 0) return strike()
       autoTimers.current.push(
         window.setTimeout(() => {
@@ -625,6 +629,20 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     p.ignoreMs = tooSoonMs(after ? after[0]!.time - from : 0, p.pace)
     moveTo(i + 1)
   }, [measures])
+
+  // Perform: your sustain pedal. Local Control off cut it off from the
+  // piano's sound, so it's passed on to what plays the music.
+  useEffect(() => {
+    if (mode !== 'perform' || !hasMidi) return
+    const off = input.onPedal((down) => {
+      yourPedal.current = true
+      setSustainPedal(down)
+    })
+    return () => {
+      off()
+      setSustainPedal(false)
+    }
+  }, [mode, hasMidi, input])
 
   // Perform: the piano stops sounding the keys you press (only the music
   // plays) while this tab is in front; back on when you switch tabs, leave

@@ -67,6 +67,20 @@ describe('midiVoice', () => {
     expect(sent).toEqual([{ data: [0x90, 60, 64], at: 2000, sentAt: 2000 }])
   })
 
+  it('passes the sustain pedal on; stopping lifts it only if the app put it down', () => {
+    const v = midiVoice(out, () => clock)
+    v.releaseAll()
+    expect(sent.map((m) => m.data)).toEqual([[0xb0, 123, 0]]) // your own pedal is left alone
+    sent = []
+    v.sustain(true)
+    v.releaseAll()
+    expect(sent.map((m) => m.data)).toEqual([
+      [0xb0, 64, 127],
+      [0xb0, 64, 0],
+      [0xb0, 123, 0],
+    ])
+  })
+
   it('keeps velocity in MIDI range', () => {
     const v = midiVoice(out, () => clock)
     v.play(60, 0, 1000, 10)
