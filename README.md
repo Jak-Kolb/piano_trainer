@@ -15,6 +15,8 @@ Keys is built around a **real piano / digital keyboard over USB-MIDI** (for exam
 3. On Home, choose **MIDI**.
 4. Play: held notes are graded automatically.
 
+**Bluetooth instead of a cable:** if your piano has Bluetooth MIDI (the Kawai KDP110 does), turn it on at the piano. Then on Home choose **MIDI** → **Bluetooth piano** → **Connect**, and pick the piano in Chrome's list. Keys reconnects to it next time. On a Mac, Chrome may ask for Bluetooth permission (System Settings → Privacy & Security → Bluetooth). Use Bluetooth or the USB cable, not both at once, or every key arrives twice.
+
 Only the Keys tab or window in front listens to the keyboard, so a Keys tab left open in the background can't play along to your keys.
 
 Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but playthrough and practice feel much better with MIDI connected.
@@ -72,7 +74,7 @@ Imported pieces and practice history stay in this browser's IndexedDB on your ma
   - Each of these is also a drill on its own, alongside slash chords and left-hand patterns.
   - With a MIDI keyboard everything is graded as you play.
 - **Color profiles** — Night, Parchment, High contrast, Forest (Settings)
-- **Play sound through your piano** (Settings): Listen, the other hand, Perform and every “Hear it” go out over USB-MIDI to your own piano instead of the computer speakers
+- **Play sound through your piano** (Settings): Listen, the other hand, Perform and every “Hear it” go out over MIDI (USB or Bluetooth) to your own piano instead of the computer speakers
 
 | Home | Settings |
 | --- | --- |

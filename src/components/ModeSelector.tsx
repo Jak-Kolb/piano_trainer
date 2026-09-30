@@ -1,3 +1,4 @@
+import { BluetoothPiano } from './BluetoothPiano'
 import {
   INPUT_MODE_OPTIONS,
   type InputModeId,
@@ -44,6 +45,7 @@ export function ModeSelector({ mode, status, onChange }: Props) {
           )
         })}
       </div>
+      {mode === 'midi' && <BluetoothPiano />}
       <p className="font-ui text-sm text-dust">{status}</p>
     </div>
   )
