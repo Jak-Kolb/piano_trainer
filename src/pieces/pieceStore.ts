@@ -68,6 +68,13 @@ export async function getPiece(id: string): Promise<StoredPiece | undefined> {
   return (await db()).get('pieces', id)
 }
 
+/** Give a piece a new name (its file stays the same). */
+export async function renamePiece(id: string, name: string): Promise<void> {
+  const d = await db()
+  const piece = await d.get('pieces', id)
+  if (piece) await d.put('pieces', { ...piece, name })
+}
+
 /** Delete a piece with its settings and practice history. */
 export async function deletePiece(id: string): Promise<void> {
   await (await db()).delete('pieces', id)

@@ -49,6 +49,7 @@ import {
   type PracticeOptions,
   type SheetView,
 } from './practice/options'
+import { PieceTitle } from './practice/PieceTitle'
 import { PracticeDrawer } from './practice/PracticeDrawer'
 import { RunSummary } from './practice/RunSummary'
 import { summarize, type PracticeSession } from './practice/stats'
@@ -66,6 +67,8 @@ interface Props {
   /** Settings to start from (saved for this piece, or the last-used ones). */
   initial: PieceState
   onExit: () => void
+  /** Double-clicking the title renames the piece. */
+  onRename?: (name: string) => void
 }
 
 /** Playback in progress (Listen or Play along). */
@@ -107,7 +110,7 @@ function stepAt(steps: PieceNote[][], t: number): number {
   return best
 }
 
-export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit }: Props) {
+export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit, onRename }: Props) {
   const measureCount = parsed.measureCount
   const measures = parsed.measures
   const hasMidi = input.id === 'midi'
@@ -877,7 +880,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
           </svg>
           Pieces
         </button>
-        <h1 className="practice-title">{title}</h1>
+        <PieceTitle name={title} onRename={onRename} />
         <span className="practice-device" title={input.getStatus()}>
           <span className={`device-dot${keyboardOn ? ' device-dot--on' : ''}`} />
           {hasMidi ? input.getStatus() : 'No keyboard (self-report)'}

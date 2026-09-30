@@ -50,7 +50,7 @@ The sheet music is engraved from the MIDI file:
 - A hand that sits far outside its clef switches clef for that line.
 - Each line holds as many bars as fit.
 
-The **Pieces** list shows how practice is going, including the date of your first clean play-through of each piece.
+The **Pieces** list shows how practice is going, including the date of your first clean play-through of each piece. To rename a piece, double-click its name at the top of its practice screen.
 
 Imported pieces and practice history stay in this browser's IndexedDB on your machine. They are not uploaded anywhere. Each address keeps its own copy: the hosted site, `npm start` (127.0.0.1:5173) and `npm run dev` (localhost:5173) don't share pieces or history.
 

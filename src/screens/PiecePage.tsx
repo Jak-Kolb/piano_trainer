@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { InputSource } from '../input'
 import { parseMidiArrayBuffer } from '../pieces/parseMidi'
-import { getPiece, getPieceState } from '../pieces/pieceStore'
+import { getPiece, getPieceState, renamePiece } from '../pieces/pieceStore'
 import { loadLastOptions, withDefaults, type PieceState } from '../pieces/practice/options'
 import { PracticeScreen } from '../pieces/PracticeScreen'
 import type { ParsedPiece, StoredPiece } from '../pieces/types'
@@ -90,6 +90,10 @@ export function PiecePage({ pieceId, input, onBack }: Props) {
       input={input}
       initial={initial}
       onExit={onBack}
+      onRename={(name) => {
+        setStored({ ...stored, name })
+        void renamePiece(pieceId, name).catch((e: unknown) => console.warn('Could not rename the piece', e))
+      }}
     />
   )
 }
