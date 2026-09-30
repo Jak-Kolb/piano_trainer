@@ -39,7 +39,7 @@ export const INPUT_MODE_OPTIONS: {
   {
     id: 'midi',
     label: 'MIDI',
-    hint: 'USB keyboard grades chords & notes automatically',
+    hint: 'USB or Bluetooth keyboard grades chords & notes automatically',
   },
   {
     id: 'self-report',

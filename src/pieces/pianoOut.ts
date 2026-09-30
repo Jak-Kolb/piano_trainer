@@ -1,7 +1,8 @@
+import { bluetoothPiano, onBluetoothChange } from '../input/bluetoothMidi'
 import { noteSent } from '../input/midiEcho'
 
 /**
- * Optional: play the app's piano sound on your own piano over USB MIDI
+ * Optional: play the app's piano sound on your own piano over MIDI (USB or Bluetooth)
  * instead of the built-in sampler. Chosen in Settings; when no MIDI output
  * is connected, sound stays on the computer.
  */
@@ -26,10 +27,12 @@ export function saveSoundOutput(output: SoundOutput): void {
   }
 }
 
-/** The bits of a Web MIDI output we use. */
+/** The bits of a MIDI output we use (Web MIDI, or a Bluetooth piano). */
 export interface MidiOut {
   name?: string | null
   send(data: number[], timestamp?: number): void
+  /** How early to send timestamped notes (default 50 ms; 0 = only when due). */
+  sendAheadMs?: number
 }
 
 interface OutAccess {
@@ -58,7 +61,12 @@ function midiAccess(): Promise<OutAccess | null> {
   return accessPromise
 }
 
-const firstOutput = (a: OutAccess | null) => (a ? [...a.outputs.values()][0] : undefined) ?? null
+/** Every connected output: a Bluetooth piano first (you connected it on purpose), then USB. */
+const outputsOf = (a: OutAccess | null): MidiOut[] => {
+  const ble = bluetoothPiano()
+  return [...(ble ? [ble] : []), ...(a?.outputs.values() ?? [])]
+}
+const firstOutput = (a: OutAccess | null) => outputsOf(a)[0] ?? null
 
 /** The connected MIDI output's name (for Settings), updating on plug / unplug. */
 export function watchPianoOutput(onChange: (name: string | null) => void): () => void {
@@ -68,6 +76,8 @@ export function watchPianoOutput(onChange: (name: string | null) => void): () =>
     const out = firstOutput(access)
     onChange(out ? out.name || 'MIDI output' : null)
   }
+  const offBluetooth = onBluetoothChange(report)
+  report()
   void midiAccess().then((a) => {
     if (stopped) return
     access = a
@@ -76,6 +86,7 @@ export function watchPianoOutput(onChange: (name: string | null) => void): () =>
   })
   return () => {
     stopped = true
+    offBluetooth()
     access?.removeEventListener('statechange', report)
   }
 }
@@ -83,7 +94,7 @@ export function watchPianoOutput(onChange: (name: string | null) => void): () =>
 /** Your piano, when it's the chosen output and one is connected. */
 export async function pianoOutput(): Promise<MidiOut | null> {
   if (loadSoundOutput() !== 'piano') return null
-  return firstOutput(await midiAccess())
+  return bluetoothPiano() ?? firstOutput(await midiAccess())
 }
 
 /**
@@ -93,7 +104,7 @@ export async function pianoOutput(): Promise<MidiOut | null> {
  */
 export function setLocalControl(on: boolean): void {
   const send = (a: OutAccess | null) => {
-    for (const out of a?.outputs.values() ?? []) out.send([0xb0, 122, on ? 127 : 0])
+    for (const out of outputsOf(a)) out.send([0xb0, 122, on ? 127 : 0])
   }
   // Synchronous when possible, so it still goes out as the page closes.
   if (accessNow) send(accessNow)
@@ -122,8 +133,9 @@ export function midiVoice(out: MidiOut, now: () => number = () => performance.no
   const sounding = new Map<number, number>()
   let strikes = 0
 
+  const ahead = out.sendAheadMs ?? SEND_AHEAD_MS
   const at = (ms: number, fn: () => void) => {
-    const wait = ms - now() - SEND_AHEAD_MS
+    const wait = ms - now() - ahead
     if (wait <= 0) return fn()
     const id = setTimeout(() => {
       pending.delete(id)
