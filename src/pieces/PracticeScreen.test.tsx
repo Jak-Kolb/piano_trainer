@@ -70,7 +70,12 @@ function stateWith(over: Partial<PieceState>, options: Partial<PracticeOptions> 
 let container: HTMLDivElement
 let root: ReturnType<typeof createRoot>
 
-async function mount(parsed: ParsedPiece, input: InputSource, initial: PieceState) {
+async function mount(
+  parsed: ParsedPiece,
+  input: InputSource,
+  initial: PieceState,
+  onRename?: (name: string) => void,
+) {
   installDomShims()
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -84,6 +89,7 @@ async function mount(parsed: ParsedPiece, input: InputSource, initial: PieceStat
         input={input}
         initial={initial}
         onExit={() => {}}
+        onRename={onRename}
       />,
     )
   })
@@ -387,5 +393,32 @@ describe('Perform: every beat', () => {
     await act(async () => button('Every beat').click())
     expect(button('Every beat').getAttribute('aria-checked')).toBe('true')
     expect(status()).toContain('on each beat')
+  })
+})
+
+describe('Renaming a piece', () => {
+  const setValue = (el: HTMLInputElement, v: string) => {
+    // React tracks the value: set it through the native setter so onChange fires
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  const titleBox = () => container.querySelector('input[aria-label="Piece name"]') as HTMLInputElement | null
+  const title = () => container.querySelector('h1.practice-title')!
+
+  it('double-click the title, type a new name, Enter saves; Escape cancels', async () => {
+    const onRename = vi.fn()
+    await mount(await piece(), fakeKeyboard().src, stateWith({}), onRename)
+    await act(async () => void title().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(titleBox()?.value).toBe('Test piece')
+    await act(async () => setValue(titleBox()!, '  Another Love (slow)  '))
+    await act(async () => void titleBox()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(onRename).toHaveBeenCalledWith('Another Love (slow)')
+    expect(titleBox()).toBeNull()
+
+    await act(async () => void title().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await act(async () => setValue(titleBox()!, 'Nope'))
+    await act(async () => void titleBox()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(onRename).toHaveBeenCalledTimes(1)
+    expect(title().textContent).toBe('Test piece')
   })
 })
