@@ -6,6 +6,7 @@ import { createGrader } from './grading'
 import { accompanimentFor, classifyHeld, isWrongNote } from './learn'
 import { clickTimes, countInClicks } from './metronome'
 import { DEFAULT_OPTIONS, tempoAfterPass, withDefaults } from './options'
+import { nextPace, withTouch } from './perform'
 import { formatAgo, formatDuration, summarize, type PracticeSession } from './stats'
 
 const note = (midi: number, time: number, measure = 1, duration = 0.5): PieceNote => ({
@@ -145,5 +146,22 @@ describe('stats', () => {
     expect(formatAgo('2026-09-22T08:00:00', now)).toBe('today')
     expect(formatAgo('2026-09-21T08:00:00', now)).toBe('yesterday')
     expect(formatAgo('2026-09-18T08:00:00', now)).toBe('4 days ago')
+  })
+})
+
+describe('perform', () => {
+  const voiced = (midi: number, velocity: number): PieceNote => ({ ...note(midi, 0), velocity })
+
+  it('pace follows the presses, ignores pauses, and stays in range', () => {
+    expect(nextPace(100, 0.5, 250)).toBeCloseTo(150) // twice as fast, smoothed
+    expect(nextPace(100, 0.5, 5000)).toBe(100) // a pause
+    expect(nextPace(100, 10, 10)).toBe(200)
+  })
+
+  it('touch scales the step to how hard you pressed, keeping its balance', () => {
+    const step = [voiced(60, 0.4), voiced(64, 0.8)]
+    const out = withTouch(step, step, 0.3)
+    expect(out.map((n) => n.velocity)).toEqual([expect.closeTo(0.2), expect.closeTo(0.4)])
+    expect(withTouch(step, step, null)).toBe(step)
   })
 })

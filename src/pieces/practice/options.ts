@@ -1,7 +1,7 @@
 /** Practice modes and the optional features, each behind its own switch. */
 import type { HandFilter } from '../types'
 
-export type PracticeMode = 'learn' | 'play' | 'listen'
+export type PracticeMode = 'learn' | 'play' | 'listen' | 'perform'
 
 export interface PracticeOptions {
   /** Practising one hand: the app plays the other. */

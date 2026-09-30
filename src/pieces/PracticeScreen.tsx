@@ -31,6 +31,7 @@ import { BarStrip } from './practice/BarStrip'
 import { createGrader, type Grade, type Grader, type RunSummary as Summary } from './practice/grading'
 import { accompanimentFor, classifyHeld, isWrongNote } from './practice/learn'
 import { clickTimes, countInClicks } from './practice/metronome'
+import { nextPace, TAP_GAP_MS, withTouch } from './practice/perform'
 import {
   saveLastOptions,
   tempoAfterPass,
@@ -180,6 +181,11 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   const [passes, setPasses] = useState({ total: 0, clean: 0, lastClean: false })
   const [held, setHeld] = useState<number[]>([])
   const [wrongHeld, setWrongHeld] = useState<Set<number>>(new Set())
+
+  // ——— Perform mode: last press, and your pace (tempo %) ———
+  const performed = useRef<{ at: number | null; pieceSec: number; pace: number }>({ at: null, pieceSec: 0, pace: initial.tempoPercent })
+  /** Pace shown in the status once you've started (null = not yet). */
+  const [shownPace, setShownPace] = useState<number | null>(null)
 
   // ——— Stats ———
   const session = useRef<PracticeSession>({
@@ -519,6 +525,31 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     [recordPass],
   )
 
+  // ——— Perform: any key plays the next step (and the other hand up to the one after) ———
+  const performTap = useCallback((velocity: number | null, at: number) => {
+    const L = latest.current
+    const p = performed.current
+    if (p.at !== null && at - p.at < TAP_GAP_MS) return // the rest of the same chord
+    const i = L.stepIdx >= L.steps.length ? 0 : L.stepIdx
+    const s = L.steps[i]
+    if (!s) return
+    markActive()
+    const from = s[0]!.time
+    // The first press starts at the tempo setting; then the pace follows you.
+    if (p.at === null) p.pace = L.tempo
+    else if (from > p.pieceSec) p.pace = nextPace(p.pace, from - p.pieceSec, at - p.at)
+    p.at = at
+    p.pieceSec = from
+    const next = L.steps[i + 1]
+    const to = next ? next[0]!.time : from + Math.max(...s.map((n) => n.duration))
+    const otherHand = L.hands === 'both' ? [] : accompanimentFor(L.others, from, to)
+    void playAccompaniment(withTouch([...s, ...otherHand], s, velocity), p.pace, from)
+    setShownPace(p.pace)
+    if (i + 1 < L.steps.length) setStepIdx(i + 1)
+    else if (L.options.repeatLoop) setStepIdx(0)
+    else setStepIdx(L.steps.length)
+  }, [])
+
   useEffect(() => {
     if (!hasMidi) return
     const offChange = input.onChange(() => {
@@ -545,6 +576,10 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
         return
       }
       const L = latest.current
+      if (L.mode === 'perform') {
+        if (L.run === 'idle') performTap(e.velocity, e.time)
+        return
+      }
       const flagWrong = () =>
         setWrongHeld((prev) => new Set(prev).add(e.midi))
       if (L.mode === 'learn' && L.run === 'idle') {
@@ -572,7 +607,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
       offChange()
       offNote()
     }
-  }, [input, hasMidi, acceptStep, recordMistake])
+  }, [input, hasMidi, acceptStep, recordMistake, performTap])
 
   // ——— Navigation ———
   const jumpTo = (bar: number) => {
@@ -580,6 +615,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     setSummary(null)
     latched.current = new Set()
     passMistakes.current = 0
+    performed.current = { at: null, pieceSec: 0, pace: tempo }
     setStepIdx(firstStepAtBar(steps, Math.min(hi, Math.max(lo, bar))))
   }
 
@@ -588,11 +624,14 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     silencePiano()
     setSummary(null)
     setMarks(new Map())
+    performed.current = { at: null, pieceSec: 0, pace: tempo }
+    setShownPace(null)
     setMode(m)
   }
 
   const primary = () => {
     if (mode === 'learn') acceptStep(true)
+    else if (mode === 'perform') performTap(null, performance.now())
     else if (mode === 'listen') void startListen('range')
     else void startPlay()
   }
@@ -650,7 +689,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   )
   const heldMap = useMemo(() => {
     if (!hasMidi || !options.showMyKeys) return undefined
-    return classifyHeld(held, mode === 'listen' ? [] : activeNotes, wrongHeld)
+    return classifyHeld(held, mode === 'listen' || mode === 'perform' ? [] : activeNotes, wrongHeld)
   }, [hasMidi, options.showMyKeys, held, mode, activeNotes, wrongHeld])
 
   const barsPerLine = barsPerSystem(dominantBarQuarters(measures))
@@ -689,6 +728,14 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     }
     if (mode === 'listen') {
       return running ? `Listening · bar ${displayBar}` : `Play from bar ${cursorBar}, or hear one bar or line.`
+    }
+    if (mode === 'perform') {
+      if (finished) return 'The end · press any key to play it again'
+      const how = hasMidi ? 'press any key' : 'press Space or Tap'
+      if (shownPace === null) {
+        return `Bar ${cursorBar} · ${how} to play the next notes. Tip: turn your piano’s Local Control off so only the music sounds.`
+      }
+      return `Bar ${cursorBar} · ${how} · ${Math.round(shownPace)}% pace`
     }
     if (finished) {
       return passes.total
@@ -831,6 +878,11 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
           {mode === 'learn' && (
             <button type="button" className="btn btn-ghost h-8" disabled={finished || !step} onClick={() => acceptStep(true)} title="Skip this step (Space)">
               Skip step
+            </button>
+          )}
+          {mode === 'perform' && (
+            <button type="button" className="btn btn-ghost h-8" disabled={!steps.length} onClick={() => performTap(null, performance.now())} title="Play the next notes (Space)">
+              Tap
             </button>
           )}
         </div>
