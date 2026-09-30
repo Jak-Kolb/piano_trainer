@@ -46,16 +46,8 @@ export function ScaleDrill({
   const startedAt = useRef<number | null>(null)
   const tickRef = useRef(0)
 
-  const fingering = useMemo(() => {
-    if (kind === 'arpeggio') {
-      return hand === 'right'
-        ? [1, 2, 3, 5, 1, 2, 3, 5]
-        : [5, 3, 2, 1, 5, 3, 2, 1]
-    }
-    return (
-      fingeringFor(key, hand, 'scale')?.ascending ?? [1, 2, 3, 1, 2, 3, 4, 5]
-    )
-  }, [hand, key, kind])
+  const pattern = fingeringFor(key, hand, kind)
+  const fingers = pattern?.twoOctaves ?? []
 
   const notes = useMemo(
     () =>
@@ -65,14 +57,8 @@ export function ScaleDrill({
     [key, kind, hand],
   )
 
-  const fingers = useMemo(() => {
-    const two = [...fingering, ...fingering.slice(1)]
-    return two.slice(0, notes.length)
-  }, [fingering, notes.length])
-
   const current = done ? null : (notes[step] ?? null)
-  const unverified =
-    kind === 'scale' ? !fingeringFor(key, hand, 'scale')?.verified : true
+  const unverified = !pattern?.verified
   const label = kind === 'scale' ? 'Scale' : 'Arpeggio'
 
   const ensureTimer = () => {

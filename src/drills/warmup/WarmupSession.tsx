@@ -35,7 +35,7 @@ interface Section {
 /** About ten minutes, technique first, then chords, then theory. */
 const SECTIONS: Section[] = [
   { kind: 'scale', title: 'Scale', blurb: 'One octave up and down, each hand, with fingering', minutes: 2 },
-  { kind: 'arpeggio', title: 'Arpeggio', blurb: 'The same key’s arpeggio, each hand', minutes: 1.5 },
+  { kind: 'arpeggio', title: 'Arpeggio', blurb: 'The same key’s arpeggio, each hand, with fingering', minutes: 1.5 },
   { kind: 'triads', title: 'Triads', blurb: 'Chord symbols: mostly the key’s own chords', minutes: 2 },
   { kind: 'inversions', title: 'Inversions', blurb: 'Root, 1st and 2nd inversion: exact lowest note', minutes: 1.5 },
   { kind: 'progression', title: 'Progression', blurb: 'A common progression, then again from the numerals', minutes: 1.5 },

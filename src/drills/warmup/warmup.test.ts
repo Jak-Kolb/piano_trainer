@@ -86,10 +86,12 @@ describe('warmup tasks', () => {
     expect(lh!.fingers).toEqual([5, 4, 3, 2, 1, 3, 2, 1, 2, 3, 1, 2, 3, 4, 5])
   })
 
-  it('arpeggios show no unverified fingers', () => {
-    const [rh] = arpeggioPasses('C major')
+  it('arpeggios go one octave up and down with fingers', () => {
+    const [rh, lh] = arpeggioPasses('C major')
     expect(names(rh!.notes)).toBe('C E G C G E C')
-    expect(rh!.fingers).toBeNull()
+    expect(rh!.fingers).toEqual([1, 2, 3, 5, 3, 2, 1])
+    expect(lh!.fingers).toEqual([5, 4, 2, 1, 2, 4, 5])
+    expect(arpeggioPasses('D major')[1]!.fingers).toEqual([5, 3, 2, 1, 2, 3, 5])
   })
 
   it('triads come mostly from the key and never repeat back to back', () => {

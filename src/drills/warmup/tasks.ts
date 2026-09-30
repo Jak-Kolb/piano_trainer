@@ -53,7 +53,7 @@ function chordTask(root: NoteName, quality: TriadQuality, extra: Partial<ChordTa
   return { id: symbol, title: symbol, notes: c.notes, pcs: c.pitchClasses, ...extra }
 }
 
-/** Keys with verified scale fingerings (the warmup rotates through these). */
+/** Keys with verified scale and arpeggio fingerings (the warmup rotates through these). */
 export const WARMUP_KEYS = SCALE_KEY_OPTIONS
 
 /** Same key all day, a different one tomorrow. */
@@ -67,31 +67,30 @@ export function progressionOfTheDay(date = new Date()): Progression {
   return PROGRESSIONS[Math.floor(day / WARMUP_KEYS.length) % PROGRESSIONS.length]!
 }
 
-/**
- * One octave up and down, right hand then left, with fingers from the
- * verified data only (descending reverses the ascending pattern).
- */
-export function scalePasses(key: string): NotePass[] {
-  return (['right', 'left'] as const).map((hand) => {
-    const up = fingeringFor(key, hand, 'scale')?.ascending
-    const fingers = up ? [...up, ...up.slice(0, -1).reverse()] : null
-    return {
-      label: `${key} scale · ${hand === 'right' ? 'right hand' : 'left hand'}`,
-      hand,
-      notes: upAndDown(majorScale(key), hand),
-      fingers,
-    }
-  })
+/** One-octave fingers from the data, up then back down (descending reverses it). */
+function upAndDownFingers(key: string, hand: 'right' | 'left', kind: 'scale' | 'arpeggio') {
+  const up = fingeringFor(key, hand, kind)?.ascending
+  return up ? [...up, ...up.slice(0, -1).reverse()] : null
 }
 
-/** Arpeggio fingerings aren't verified yet, so none are shown. */
+/** One octave up and down, right hand then left, with fingering. */
+export function scalePasses(key: string): NotePass[] {
+  return (['right', 'left'] as const).map((hand) => ({
+    label: `${key} scale · ${hand === 'right' ? 'right hand' : 'left hand'}`,
+    hand,
+    notes: upAndDown(majorScale(key), hand),
+    fingers: upAndDownFingers(key, hand, 'scale'),
+  }))
+}
+
+/** The key's arpeggio, one octave up and down, each hand, with fingering. */
 export function arpeggioPasses(key: string): NotePass[] {
   const name = key.replace(' major', '')
   return (['right', 'left'] as const).map((hand) => ({
     label: `${name} arpeggio · ${hand === 'right' ? 'right hand' : 'left hand'}`,
     hand,
     notes: upAndDown(majorArpeggio(key), hand),
-    fingers: null,
+    fingers: upAndDownFingers(key, hand, 'arpeggio'),
   }))
 }
 

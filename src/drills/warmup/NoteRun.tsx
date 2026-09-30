@@ -101,7 +101,6 @@ export function NoteRun({ input, passes, onDone }: Props) {
           {keyboard && target
             ? `Next: ${formatNoteName(target)}${pass.fingers ? ` with finger ${pass.fingers[step]}` : ''}`
             : 'Play it up and back down, then tick it off.'}
-          {!pass.fingers && ' Arpeggio fingerings aren’t verified yet, so none are shown.'}
         </p>
         {keyboard && wrong > 0 && <p className="run-count">{wrong} wrong so far</p>}
       </div>
