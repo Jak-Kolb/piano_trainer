@@ -17,7 +17,7 @@ import type { MeasureInfo, PieceNote } from '../types'
 export const PERFORM_CHORD_SEC = 0.05
 
 /** Keys struck this close together are always one press (a chord, or a bang). */
-export const TAP_GAP_MS = 60
+const TAP_GAP_MS = 60
 /** …and a press is never ignored for longer than this. */
 const MAX_IGNORE_MS = 600
 /** A press counts once this share of the time to the next notes has passed. */
@@ -52,15 +52,16 @@ const PAUSE_FACTOR = 3
 /**
  * Your pace after a press: `pieceSec` of music took `realMs`. It follows
  * you straight away (the second press already sets it), mostly trusting the
- * latest gap; a much longer gap than your own recent ones is a pause.
+ * latest gap; a much longer gap than your own recent ones is a pause. Never
+ * above `maxPace` (Assisted: the tempo setting).
  */
-export function followPace(p: Pace, pieceSec: number, realMs: number): Pace {
+export function followPace(p: Pace, pieceSec: number, realMs: number, maxPace = 200): Pace {
   if (pieceSec <= 0 || realMs <= 0) return p
   const msPerSec = realMs / pieceSec
   const pause = p.msPerSec === null ? realMs > FIRST_PAUSE_MS : msPerSec > p.msPerSec * PAUSE_FACTOR
   if (pause) return p
   const tapped = 100_000 / msPerSec
-  const pace = Math.min(200, Math.max(25, p.msPerSec === null ? tapped : p.pace * 0.4 + tapped * 0.6))
+  const pace = Math.min(maxPace, Math.max(25, p.msPerSec === null ? tapped : p.pace * 0.4 + tapped * 0.6))
   return { pace, msPerSec: 100_000 / pace }
 }
 

@@ -471,6 +471,47 @@ describe('Perform: Assisted', () => {
     expect(vi.mocked(playAccompaniment).mock.calls.at(-1)![1]).toBeLessThan(150) // the pace didn't jump
   })
 
+  describe('never faster than written (at the tempo setting)', () => {
+    // 4/4 at 120 bpm: a quarter is 500 ms, an eighth 250, a 16th 125
+    async function soundedAt(lengthBeats: number, count: number, pressEveryMs: number, presses: number) {
+      const times: number[] = []
+      vi.mocked(playAccompaniment).mockImplementation(async () => void times.push(Math.round(performance.now())))
+      const run = notes(...Array.from({ length: count }, (_, k) => [k * lengthBeats, lengthBeats, 60 + k] as [number, number, number]))
+      const parsed = await parseMidiArrayBuffer(synthMidi({ notes: [...run, [0, count * lengthBeats, 36, 1]] }))
+      const kb = fakeKeyboard()
+      await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'assisted' }))
+      const start = Math.round(performance.now())
+      // (Pressing on after the last note would start the piece again: the tests stop there.)
+      for (let k = 0; k < presses; k++) {
+        await kb.press(30 + (k % 40))
+        await later(pressEveryMs)
+      }
+      await later(2000)
+      vi.mocked(playAccompaniment).mockImplementation(async () => {})
+      return times.map((t) => t - start)
+    }
+
+    it('quarters pressed at eighth speed still sound as quarters', async () => {
+      expect(await soundedAt(1, 4, 250, 7)).toEqual([0, 500, 1000, 1500])
+    })
+
+    it('quarters pressed at half-note speed sound as half notes: slower is yours', async () => {
+      expect(await soundedAt(1, 4, 1000, 4)).toEqual([0, 1000, 2000, 3000])
+    })
+
+    it('eighths pressed at 16th speed still sound as eighths', async () => {
+      expect(await soundedAt(0.5, 4, 125, 7)).toEqual([0, 250, 500, 750])
+    })
+
+    it('16ths pressed at 32nd speed still sound as 16ths', async () => {
+      expect(await soundedAt(0.25, 8, 62, 16)).toEqual([0, 125, 250, 375, 500, 625, 750, 875])
+    })
+
+    it('16ths pressed as eighths: the ones between fill in, at the 16th speed', async () => {
+      expect(await soundedAt(0.25, 8, 250, 4)).toEqual([0, 125, 250, 375, 500, 625, 750, 875])
+    })
+  })
+
   it('switching to Assisted in the bar', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
