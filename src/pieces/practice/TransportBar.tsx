@@ -120,14 +120,14 @@ export function TransportBar({
       <span className="transport-spacer" />
 
       {range ? (
-        <span className="range-chip" title="Drag on the bar strip (or shift-click bars) to change">
+        <span className="range-chip" title="Drag across bars on the sheet or the bar strip to change; click a bar to clear">
           Bars {range.start}–{range.end}
           <button type="button" className="range-chip-clear" aria-label="Practise the whole piece" onClick={onClearRange}>
             ×
           </button>
         </span>
       ) : (
-        <span className="range-chip range-chip--hint" title="Drag on the bar strip (or shift-click bars) to practise part of the piece">
+        <span className="range-chip range-chip--hint" title="Drag across bars on the sheet or the bar strip to practise part of the piece">
           Whole piece
         </span>
       )}

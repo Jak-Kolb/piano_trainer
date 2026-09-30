@@ -4,7 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
+  type PointerEvent,
 } from 'react'
 import {
   Accidental,
@@ -80,7 +80,10 @@ interface Props {
   secPerQuarter: number
   measureCount: number
   selection: { start: number; end: number } | null
+  /** A click on a bar (Shift held to extend the selection). */
   onMeasurePointer: (bar: number, shiftKey: boolean) => void
+  /** Click-and-drag across bars: choose them as the practice range. */
+  onMeasureRange?: (range: { start: number; end: number }) => void
   /** +1 next measure, -1 previous — from wheel/trackpad on the sheet. */
   onMeasureScroll?: (dir: 1 | -1) => void
   /** Playhead time (sec) for smooth line glide during demo / practice. */
@@ -394,6 +397,7 @@ export function StaffNotation({
   measureCount,
   selection,
   onMeasurePointer,
+  onMeasureRange,
   onMeasureScroll,
   nowSec,
   barsPerLine = 6,
@@ -420,6 +424,10 @@ export function StaffNotation({
   const onMeasureScrollRef = useRef(onMeasureScroll)
   onMeasureScrollRef.current = onMeasureScroll
   const [themeEpoch, setThemeEpoch] = useState(0)
+  /** Bars being dragged over (shown before the range is set on release). */
+  const drag = useRef<{ from: number; moved: boolean } | null>(null)
+  const [dragSel, setDragSel] = useState<{ start: number; end: number } | null>(null)
+  const shownSelection = dragSel ?? selection
 
   useEffect(() => {
     const onTheme = () => setThemeEpoch((n) => n + 1)
@@ -595,7 +603,7 @@ export function StaffNotation({
         bars.forEach((barNum, bi) => {
           if (barNum > measureCount) return
           const x = barX(bi)
-          if (inSelection(barNum, selection)) {
+          if (inSelection(barNum, shownSelection)) {
             ctx.save()
             ctx.setFillStyle(hexToRgba(colors.active, 0.22))
             ctx.fillRect(x, y0, barWidths[bi]!, systemH)
@@ -868,7 +876,7 @@ export function StaffNotation({
     }
 
     draw()
-  }, [notes, measure, activeNotes, selection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth, width, measureCount, dimStaff, noteMarks])
+  }, [notes, measure, activeNotes, shownSelection, measures, themeEpoch, polarity, score, staffOf, hands, pieceDynMarks, baseLine, systems, lineClefs, minWidths, packOpts, boxWidth, width, measureCount, dimStaff, noteMarks])
 
   // Every render (60fps during Play): just slide the drawing.
   useLayoutEffect(() => {
@@ -884,18 +892,20 @@ export function StaffNotation({
   const cur = systems[curLine]
   const next = systems[curLine + 1]
 
-  const handleClick = (e: MouseEvent) => {
+  /** The bar under a point. While dragging, past a line's ends counts as its first / last bar. */
+  const barAt = (clientX: number, clientY: number, dragging: boolean): number | null => {
     const lay = layout.current
     const box = wrap.current
-    if (!lay || !box) return
+    if (!lay || !box) return null
     const rect = box.getBoundingClientRect()
-    const x = e.clientX - rect.left - lay.marginLeft
-    const y = e.clientY - rect.top + offsetRef.current
+    let x = clientX - rect.left - lay.marginLeft
+    const y = clientY - rect.top + offsetRef.current
     const sys = lay.systems.find((s) => y >= s.top && y < s.bottom)
-    if (!sys) return
+    if (!sys) return null
     const widths = sys.barWidths
     const totalW = widths.reduce((a, w) => a + w, 0)
-    if (x < 0 || x > totalW) return
+    if (dragging) x = Math.min(totalW - 1, Math.max(0, x))
+    if (x < 0 || x > totalW) return null
     let acc = 0
     let bi = widths.length - 1
     for (let i = 0; i < widths.length; i++) {
@@ -906,8 +916,44 @@ export function StaffNotation({
       }
     }
     const bar = sys.start + bi
-    if (bar < 1 || bar > measureCount) return
-    onMeasurePointer(bar, e.shiftKey)
+    return bar >= 1 && bar <= measureCount ? bar : null
+  }
+
+  // Click a bar to go there; hold and drag across bars to select them.
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return
+    const bar = barAt(e.clientX, e.clientY, false)
+    if (bar === null) return
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    drag.current = { from: bar, moved: false }
+  }
+  const onPointerMove = (e: PointerEvent) => {
+    const d = drag.current
+    if (!d) return
+    const bar = barAt(e.clientX, e.clientY, true)
+    if (bar === null) return
+    if (bar !== d.from) d.moved = true
+    if (d.moved) {
+      const start = Math.min(d.from, bar)
+      const end = Math.max(d.from, bar)
+      setDragSel((prev) => (prev?.start === start && prev.end === end ? prev : { start, end }))
+    }
+  }
+  const onPointerUp = (e: PointerEvent) => {
+    const d = drag.current
+    drag.current = null
+    setDragSel(null)
+    if (!d) return
+    const bar = barAt(e.clientX, e.clientY, true) ?? d.from
+    if ((d.moved || bar !== d.from) && onMeasureRange) {
+      onMeasureRange({ start: Math.min(d.from, bar), end: Math.max(d.from, bar) })
+    } else {
+      onMeasurePointer(d.from, e.shiftKey)
+    }
+  }
+  const onPointerCancel = () => {
+    drag.current = null
+    setDragSel(null)
   }
 
   const selLabel =
@@ -920,8 +966,11 @@ export function StaffNotation({
     <div
       ref={wrap}
       className={`staff-frame${polarity === 'dark-on-light' ? ' staff-frame--paper' : ''}`}
-      onClick={handleClick}
-      title="Click a bar to jump · Shift-click to select · Scroll to move measures"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      title="Click a bar to go there · Drag across bars to select them · Scroll to move measures"
     >
       <div ref={host} className="w-full" />
       <p className="pb-1 text-center font-ui text-xs text-dust">
@@ -930,8 +979,8 @@ export function StaffNotation({
         {' · '}playing {measure}
         {selLabel ?? ''}
         {' · '}
-        {hands ? 'tracks→hands' : 'pitch→clef'} · click /
-        shift-click · scroll · lines glide
+        {hands ? 'tracks→hands' : 'pitch→clef'} · click · drag to
+        select · scroll · lines glide
       </p>
     </div>
   )
