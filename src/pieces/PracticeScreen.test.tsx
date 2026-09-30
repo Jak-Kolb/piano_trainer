@@ -211,9 +211,20 @@ describe('Perform mode', () => {
     expect(vi.mocked(playAccompaniment).mock.calls[1]![0].map((n) => n.midi)).toEqual([62])
   })
 
-  it('with one hand chosen, the other hand comes along until your next note', async () => {
+  it('with one hand chosen and the switch off, only your hand plays', async () => {
     const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }))
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }, { otherHand: false }))
+    for (const m of [30, 31, 32]) {
+      await kb.tap(m)
+      await later(500)
+    }
+    const played = vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi))
+    expect(played).toEqual([[60], [62], [64]])
+  })
+
+  it('with "Play the other hand for me" on, it comes along until your next note', async () => {
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }, { otherHand: true }))
     for (const m of [30, 31, 32]) {
       await kb.tap(m)
       await later(500)

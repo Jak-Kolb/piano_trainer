@@ -1,3 +1,5 @@
+import { noteSent } from '../input/midiEcho'
+
 /**
  * Optional: play the app's piano sound on your own piano over USB MIDI
  * instead of the built-in sampler. Chosen in Settings; when no MIDI output
@@ -138,6 +140,7 @@ export function midiVoice(out: MidiOut, now: () => number = () => performance.no
       at(atMs, () => {
         if (sounding.has(midi)) out.send([0x80, midi, 0], stamp(atMs))
         sounding.set(midi, strike)
+        noteSent(midi, stamp(atMs))
         out.send([0x90, midi, vel], stamp(atMs))
       })
       at(atMs + durMs, () => {

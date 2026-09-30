@@ -543,7 +543,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     p.pieceSec = from
     const next = L.steps[i + 1]
     const to = next ? next[0]!.time : from + Math.max(...s.map((n) => n.duration))
-    const otherHand = L.hands === 'both' ? [] : accompanimentFor(L.others, from, to)
+    const otherHand =
+      L.options.otherHand && L.hands !== 'both' ? accompanimentFor(L.others, from, to) : []
     // The step sounds together, on your press (a rolled chord in the file
     // would otherwise trail it).
     const struck = s.map((n) => ({ ...n, time: from }))

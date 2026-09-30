@@ -1,3 +1,4 @@
+import { isEcho } from './midiEcho'
 import type { InputSource, NoteEvent } from './types'
 
 interface MidiInput {
@@ -15,6 +16,8 @@ export function createMidiSource(): InputSource {
   const listeners = new Set<() => void>()
   const noteListeners = new Set<(e: NoteEvent) => void>()
   const heldMidi = new Set<number>()
+  /** Keys whose note-on was the piano echoing the app: drop their note-off too. */
+  const echoed = new Set<number>()
   let access: MidiAccess | null = null
   let status = 'MIDI off — will request access'
   let disposed = false
@@ -45,10 +48,15 @@ export function createMidiSource(): InputSource {
     // MIDIMessageEvent.timeStamp shares the performance.now() clock
     const time = ev.timeStamp ?? performance.now()
     if (cmd === 0x90 && vel > 0) {
+      if (isEcho(note, time)) {
+        echoed.add(note)
+        return
+      }
       heldMidi.add(note)
       for (const l of noteListeners) l({ midi: note, on: true, velocity: vel / 127, time })
       notify()
     } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
+      if (echoed.delete(note)) return
       heldMidi.delete(note)
       for (const l of noteListeners) l({ midi: note, on: false, velocity: 0, time })
       notify()
