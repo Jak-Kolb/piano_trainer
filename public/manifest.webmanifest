@@ -1,0 +1,15 @@
+{
+  "name": "Keys",
+  "short_name": "Keys",
+  "description": "Piano practice on a USB-MIDI keyboard: sheet music, Learn, Play along, Listen, Perform, and daily skills.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c1220",
+  "theme_color": "#0c1220",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

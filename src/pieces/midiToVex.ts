@@ -30,36 +30,42 @@ const PC_FLAT = [
   'b',
 ] as const
 
-/** Flat-key signatures (and relative minors we might store as letter names). */
-const FLAT_KEYS = new Set([
-  'F',
-  'Bb',
-  'Eb',
-  'Ab',
-  'Db',
-  'Gb',
-  'Cb',
-  'd',
-  'g',
-  'c',
-  'f',
-  'bb',
-  'eb',
-  'ab',
+/**
+ * Flat-key signatures, major and minor (VexFlow key names) → pitch class of
+ * the relative minor's leading tone, which is written as a sharp even in a
+ * flat key (C# in F major / D minor, not Db).
+ */
+const FLAT_KEY_LEADING_TONE = new Map<string, number>([
+  ['F', 1],
+  ['Dm', 1],
+  ['Bb', 6],
+  ['Gm', 6],
+  ['Eb', 11],
+  ['Cm', 11],
+  ['Ab', 4],
+  ['Fm', 4],
+  ['Db', 9],
+  ['Bbm', 9],
+  ['Gb', 2],
+  ['Ebm', 2],
+  ['Cb', 7],
+  ['Abm', 7],
 ])
 
 export function keyPrefersFlats(keySignature: string): boolean {
-  return FLAT_KEYS.has((keySignature || 'C').trim())
+  return FLAT_KEY_LEADING_TONE.has((keySignature || 'C').trim())
 }
 
 /**
  * MIDI → VexFlow key. Spelling follows the piece key so chromatics in
- * sharp keys use sharps (A# not Bb) and flat keys use flats.
+ * sharp keys use sharps (A# not Bb) and flat keys use flats, except the
+ * relative minor's leading tone.
  */
 export function midiToVexKey(midi: number, keySignature = 'C'): string {
   const pc = ((midi % 12) + 12) % 12
   const oct = Math.floor(midi / 12) - 1
-  const names = keyPrefersFlats(keySignature) ? PC_FLAT : PC_SHARP
+  const leading = FLAT_KEY_LEADING_TONE.get((keySignature || 'C').trim())
+  const names = leading === undefined || pc === leading ? PC_SHARP : PC_FLAT
   return `${names[pc]}/${oct}`
 }
 
@@ -70,47 +76,6 @@ export interface VexDuration {
   dots: number
   /** Exact beat length in 4/4 (quarter = 1). */
   beats: number
-}
-
-/**
- * Pick the closest common note value, including dotted notes.
- * 1.5 → dotted quarter, not quarter + invented eighth rest.
- */
-export function durationToVex(
-  durationSec: number,
-  secPerQuarter: number,
-): VexDuration {
-  const beats = durationSec / Math.max(0.01, secPerQuarter)
-  return beatsToVex(beats)
-}
-
-const BEAT_TABLE: VexDuration[] = [
-  { key: 'w', dots: 0, beats: 4 },
-  { key: 'h', dots: 1, beats: 3 },
-  { key: 'h', dots: 0, beats: 2 },
-  { key: 'q', dots: 1, beats: 1.5 },
-  { key: 'q', dots: 0, beats: 1 },
-  { key: '8', dots: 1, beats: 0.75 },
-  { key: '8', dots: 0, beats: 0.5 },
-  { key: '16', dots: 1, beats: 0.375 },
-  { key: '16', dots: 0, beats: 0.25 },
-]
-
-export function beatsToVex(beats: number): VexDuration {
-  if (beats <= 0) return { key: '16', dots: 0, beats: 0.25 }
-  let best = BEAT_TABLE[BEAT_TABLE.length - 1]!
-  let bestErr = Infinity
-  for (const row of BEAT_TABLE) {
-    const err = Math.abs(row.beats - beats)
-    // Prefer not rounding a dotted value down to undotted when close
-    if (err < bestErr - 0.001) {
-      best = row
-      bestErr = err
-    }
-  }
-  // If still closer to a larger undotted than a dotted (e.g. 1.4 → 1.5),
-  // the min-err pick above already handles it.
-  return best
 }
 
 export function vexDurationBeats(dur: VexDuration | string): number {
@@ -130,34 +95,6 @@ export function vexDurationBeats(dur: VexDuration | string): number {
     default:
       return 1
   }
-}
-
-export type RestSpec = { key: string; dots: number; beats: number }
-
-/** Fill a gap with as few rest glyphs as possible (includes dotted rests). */
-export function restDurationsForBeats(beats: number): RestSpec[] {
-  const out: RestSpec[] = []
-  // Floor to 16th grid so rests never overshoot the gap (keeps voice ticks honest)
-  let left = Math.floor(beats * 4 + 1e-9) / 4
-  if (left <= 0) return out
-  const table: RestSpec[] = [
-    { key: 'w', dots: 0, beats: 4 },
-    { key: 'h', dots: 1, beats: 3 },
-    { key: 'h', dots: 0, beats: 2 },
-    { key: 'q', dots: 1, beats: 1.5 },
-    { key: 'q', dots: 0, beats: 1 },
-    { key: '8', dots: 1, beats: 0.75 },
-    { key: '8', dots: 0, beats: 0.5 },
-    { key: '16', dots: 1, beats: 0.375 },
-    { key: '16', dots: 0, beats: 0.25 },
-  ]
-  for (const row of table) {
-    while (left >= row.beats - 0.001) {
-      out.push(row)
-      left -= row.beats
-    }
-  }
-  return out
 }
 
 export function notesInMeasure(

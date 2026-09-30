@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { InversionDrill } from './drills/InversionDrill'
 import { LeftHandDrill } from './drills/LeftHandDrill'
+import { ProgressionDrill } from './drills/ProgressionDrill'
 import { ProgressView } from './drills/ProgressView'
-import { RhythmDrill } from './drills/RhythmDrill'
 import { ScaleDrill } from './drills/ScaleDrill'
-import { SessionRunner } from './drills/SessionRunner'
-import { SightReadingDrill } from './drills/SightReadingDrill'
 import { SlashChordDrill } from './drills/SlashChordDrill'
+import { TheoryDrill } from './drills/TheoryDrill'
 import { TriadRecall } from './drills/TriadRecall'
+import { WarmupSession } from './drills/warmup/WarmupSession'
 import {
   createInputSource,
   loadSavedInputMode,
@@ -77,6 +77,8 @@ export default function App() {
   if (nav.screen === 'drill') {
     const back = () => setNav({ screen: 'skills' })
     switch (nav.id) {
+      case 'warmup':
+        return <WarmupSession input={input} onExit={back} />
       case 'triad-recall':
         return <TriadRecall input={input} onExit={back} />
       case 'inversions':
@@ -89,14 +91,10 @@ export default function App() {
         return <ScaleDrill input={input} onExit={back} kind="arpeggio" />
       case 'left-hand':
         return <LeftHandDrill input={input} onExit={back} />
-      case 'sight-reading':
-        return <SightReadingDrill input={input} onExit={back} />
-      case 'rhythm':
-        return <RhythmDrill input={input} onExit={back} />
-      case 'session':
-        return <SessionRunner input={input} onExit={back} />
-      case 'session-reading':
-        return <SessionRunner input={input} onExit={back} readingOnly />
+      case 'progressions':
+        return <ProgressionDrill input={input} onExit={back} />
+      case 'theory':
+        return <TheoryDrill input={input} onExit={back} />
       case 'progress':
         return <ProgressView onExit={back} />
     }

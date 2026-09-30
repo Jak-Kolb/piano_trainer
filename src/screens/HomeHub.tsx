@@ -43,7 +43,7 @@ export function HomeHub({
           >
             <span className="btn-tile-title">Skills</span>
             <span className="btn-tile-blurb">
-              Triads, inversions, arpeggios, reading…
+              10-minute warmup, triads, scales, progressions, theory
             </span>
           </button>
           <button
