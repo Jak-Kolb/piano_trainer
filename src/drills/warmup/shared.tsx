@@ -13,20 +13,23 @@ export function Keys({
   held,
   targets,
   showTargets,
-  wantPcs,
+  wantPcs = [],
+  exact = false,
   hand = 'right',
 }: {
   held: number[]
   targets: number[]
   showTargets: boolean
   /** Pitch classes that count as right for held keys. */
-  wantPcs: number[]
+  wantPcs?: number[]
+  /** Only the target keys themselves count as right (not the same note in another octave). */
+  exact?: boolean
   hand?: 'right' | 'left'
 }) {
   const active: ActiveKey[] = showTargets ? targets.map((midi) => ({ midi, hand })) : []
   const want = new Set(wantPcs)
   const states = new Map<number, HeldState>(
-    held.map((m) => [m, want.has(pc(m)) ? 'good' : 'wrong']),
+    held.map((m) => [m, (exact ? targets.includes(m) : want.has(pc(m))) ? 'good' : 'wrong']),
   )
   return <PianoBar activeKeys={active} held={states} lowMidi={36} highMidi={84} />
 }
