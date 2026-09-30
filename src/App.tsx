@@ -16,6 +16,7 @@ import {
   type InputSource,
 } from './input'
 import type { ModuleId } from './modules'
+import { reconnectBluetoothPiano } from './input/bluetoothMidi'
 import { setLocalControl } from './pieces/pianoOut'
 import { HomeHub } from './screens/HomeHub'
 import { PiecePage } from './screens/PiecePage'
@@ -68,6 +69,8 @@ export default function App() {
       setStatus(src.getStatus())
       checkDevice()
     })
+    // The Bluetooth piano from last time, if Chrome remembers it and it's on.
+    if (mode === 'midi') void reconnectBluetoothPiano()
     void src
       .start()
       .then(checkDevice)
