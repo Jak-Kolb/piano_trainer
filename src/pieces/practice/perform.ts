@@ -1,7 +1,7 @@
 /**
  * Perform mode (like Concert Magic on a digital piano): any key plays the
  * next notes of the piece. You set the rhythm and the touch; the app plays
- * the right notes. Press for every new note, or ("Eighths") for every note
+ * the right notes. Press for every new note, or ("Assisted") for every note
  * down to eighth notes while faster ones (16ths, 32nds) play by themselves.
  */
 import { barQuarters } from '../meter'
@@ -9,19 +9,29 @@ import { chooseStep, TPQ } from '../notate'
 import { measureInfoAt } from '../tieSlices'
 import type { MeasureInfo, PieceNote } from '../types'
 
+/**
+ * Perform plays notes this close together as one chord, on the press. Wider
+ * than a chord's natural spread, narrower than a fast run: 32nds stay a run.
+ * (Learn groups more loosely, so a spread chord is one chord to play.)
+ */
+export const PERFORM_CHORD_SEC = 0.05
+
 /** Keys struck this close together are always one press (a chord, or a bang). */
 export const TAP_GAP_MS = 60
-/** …and never more than this apart. */
-const MAX_GAP_MS = 150
+/** …and a press is never ignored for longer than this. */
+const MAX_IGNORE_MS = 600
+/** A press counts once this share of the time to the next notes has passed. */
+const TOO_SOON = 0.45
 
 /**
- * How long after a press further keys still belong to it: a third of the
- * time until the next notes are due at your pace, between 60 and 150 ms. A
- * slightly rolled chord is then one press, not two (which skipped a note).
+ * A press sooner than this after the last one is ignored: under half the
+ * time until the next notes are due at your pace (60 ms to 0.6 s). A rolled
+ * chord, a double hit or two keys back to back then don't race ahead, while
+ * you can still speed up (each counted press up to about twice as fast).
  */
-export function chordWindowMs(gapPieceSec: number, pace: number): number {
+export function tooSoonMs(gapPieceSec: number, pace: number): number {
   const gapMs = (gapPieceSec / Math.max(0.25, pace / 100)) * 1000
-  return Math.min(MAX_GAP_MS, Math.max(TAP_GAP_MS, gapMs / 3))
+  return Math.min(MAX_IGNORE_MS, Math.max(TAP_GAP_MS, gapMs * TOO_SOON))
 }
 
 // ---------------------------------------------------------------------------
@@ -55,13 +65,13 @@ export function followPace(p: Pace, pieceSec: number, realMs: number): Pace {
 }
 
 // ---------------------------------------------------------------------------
-// Eighths: which notes take a press
+// Assisted: which notes take a press
 
 /** How far off the grid (in ticks, TPQ per quarter) a note can be and still be on it. */
 const SLACK_TICKS = 0.8
 
 /**
- * For each step, whether it takes a press with "Eighths": notes on an eighth
+ * For each step, whether it takes a press with "Assisted": notes on an eighth
  * (or, in a beat of triplets or sextuplets, on a triplet eighth) do; the
  * faster notes between them (16ths, 32nds, the in-between sextuplets) don't.
  * The subdivision is read per beat, as the sheet does.
@@ -93,7 +103,7 @@ export interface PressPlan {
 }
 
 /**
- * What one press plays with "Eighths": the step at `from`, then the faster
+ * What one press plays with "Assisted": the step at `from`, then the faster
  * notes after it up to the next note that takes a press, never as much as
  * `eighthSec` (an eighth note) later.
  */

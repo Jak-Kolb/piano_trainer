@@ -6,7 +6,7 @@ import { createGrader } from './grading'
 import { accompanimentFor, classifyHeld, isWrongNote } from './learn'
 import { clickTimes, countInClicks } from './metronome'
 import { DEFAULT_OPTIONS, tempoAfterPass, withDefaults } from './options'
-import { chordWindowMs, followPace, pressPlan, pressPoints, withTouch } from './perform'
+import { followPace, pressPlan, pressPoints, tooSoonMs, withTouch } from './perform'
 import { formatAgo, formatDuration, summarize, type PracticeSession } from './stats'
 
 const note = (midi: number, time: number, measure = 1, duration = 0.5): PieceNote => ({
@@ -167,29 +167,29 @@ describe('perform', () => {
     expect(followPace(start, 0.5, 6000)).toBe(start) // a first gap over 4 s too
   })
 
-  it('the chord window is a third of the time to the next notes, 60–150 ms', () => {
-    expect(chordWindowMs(0.3, 100)).toBeCloseTo(100)
-    expect(chordWindowMs(0.5, 100)).toBe(150)
-    expect(chordWindowMs(0.1, 100)).toBe(60)
-    expect(chordWindowMs(0.3, 200)).toBe(60) // twice as fast: half the time
+  it('a press under half the time to the next notes is too soon (60 ms to 0.6 s)', () => {
+    expect(tooSoonMs(0.25, 100)).toBeCloseTo(112.5) // an eighth at 120 bpm
+    expect(tooSoonMs(0.25, 200)).toBe(60) // twice as fast
+    expect(tooSoonMs(0.05, 100)).toBe(60)
+    expect(tooSoonMs(4, 100)).toBe(600) // a long note: never ignore for longer
   })
 
   // One 4/4 bar at 60 bpm: a quarter is 1 s
   const bar = [{ startSec: 0, durationSec: 4, beatsPerBar: 4, beatUnit: 4, keySignature: 'C' }]
   const at = (...times: number[]) => times.map((t, i) => [note(60 + i, t)])
 
-  it('Eighths: eighth notes each take a press; 16ths between them do not', () => {
+  it('Assisted: eighth notes each take a press; 16ths between them do not', () => {
     // Quarter, two eighths, four sixteenths
     expect(pressPoints(at(0, 1, 1.5, 2, 2.25, 2.5, 2.75), bar)).toEqual([true, true, true, true, false, true, false])
   })
 
-  it('Eighths: triplet eighths each take a press; in sextuplets every other note does', () => {
+  it('Assisted: triplet eighths each take a press; in sextuplets every other note does', () => {
     expect(pressPoints(at(0, 1 / 3, 2 / 3), bar)).toEqual([true, true, true])
     const six = [0, 1, 2, 3, 4, 5].map((k) => k / 6)
     expect(pressPoints(at(...six), bar)).toEqual([true, false, true, false, true, false])
   })
 
-  it('Eighths: a press plays its note, then the faster notes up to the next press, never an eighth or more later', () => {
+  it('Assisted: a press plays its note, then the faster notes up to the next press, never an eighth or more later', () => {
     const steps = at(0, 0.25, 0.5, 1, 1.75)
     const press = pressPoints(steps, bar)
     const plan = pressPlan(steps, 0, press, 0.5)
