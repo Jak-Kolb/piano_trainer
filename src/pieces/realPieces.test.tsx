@@ -81,6 +81,13 @@ describe('real pieces', () => {
     expect(vexLog.tuplets.some((t) => t.num === 6)).toBe(true)
   })
 
+  it.skipIf(!has(FILES.interstellar))('Interstellar bars 5–6: held octave over the eighths', async () => {
+    const parsed = await load(FILES.interstellar)
+    const staves = await renderStaff(parsed, { measure: 5, barsPerLine: 4 })
+    expect(barRhythm(5, 'treble', staves)).toEqual(['a/3+a/4:hd', 'e/4:8 c/4:8 e/4:8 c/4:8 e/4:8 c/4:8'])
+    expect(barRhythm(6, 'treble', staves)).toEqual(['b/3+b/4:hd', 'e/4:8 d/4:8 e/4:8 d/4:8 e/4:8 d/4:8'])
+  })
+
   it.skipIf(!has(FILES.pirates))('Pirates (6/8): eighth-note values and C# leading tone', async () => {
     const parsed = await load(FILES.pirates)
     const staves = await renderStaff(parsed)
