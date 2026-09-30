@@ -24,7 +24,11 @@ export interface PracticeOptions {
   rememberSettings: boolean
   /** Log practice time, mistakes per bar and clean runs. */
   trackStats: boolean
+  /** Perform: press for every new note, or a steady beat. */
+  performTap: PerformTap
 }
+
+export type PerformTap = 'note' | 'beat'
 
 export const DEFAULT_OPTIONS: PracticeOptions = {
   otherHand: false,
@@ -37,6 +41,7 @@ export const DEFAULT_OPTIONS: PracticeOptions = {
   countIn: true,
   rememberSettings: true,
   trackStats: true,
+  performTap: 'note',
 }
 
 const LAST_OPTIONS_KEY = 'keys.practiceOptions'

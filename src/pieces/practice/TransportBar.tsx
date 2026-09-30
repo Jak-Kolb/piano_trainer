@@ -1,5 +1,5 @@
 import type { HandFilter } from '../types'
-import type { PracticeMode } from './options'
+import type { PerformTap, PracticeMode } from './options'
 
 export type RunState = 'idle' | 'loading' | 'running' | 'paused'
 
@@ -20,6 +20,9 @@ interface Props {
   hands: HandFilter
   /** Not given in Perform, which always plays both hands (the control hides). */
   onHands?: (h: HandFilter) => void
+  /** Perform only: what each press plays. */
+  tap?: PerformTap
+  onTap?: (t: PerformTap) => void
   range: { start: number; end: number } | null
   onClearRange: () => void
 }
@@ -45,6 +48,8 @@ export function TransportBar({
   onTempo,
   hands,
   onHands,
+  tap,
+  onTap,
   range,
   onClearRange,
 }: Props) {
@@ -147,6 +152,29 @@ export function TransportBar({
           aria-label="Tempo percent"
         />
       </label>
+
+      {onTap && (
+        <div className="seg seg--small" role="radiogroup" aria-label="Press for">
+          {(
+            [
+              ['note', 'Every note', 'Press for each new note'],
+              ['beat', 'Every beat', 'Press a steady beat; the notes inside each beat play by themselves'],
+            ] as [PerformTap, string, string][]
+          ).map(([id, label, hint]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={tap === id}
+              title={hint}
+              className={`seg-btn${tap === id ? ' seg-btn--on' : ''}`}
+              onClick={() => onTap(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {onHands && (
         <div className="seg seg--small" role="radiogroup" aria-label="Hands">

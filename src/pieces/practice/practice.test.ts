@@ -6,7 +6,7 @@ import { createGrader } from './grading'
 import { accompanimentFor, classifyHeld, isWrongNote } from './learn'
 import { clickTimes, countInClicks } from './metronome'
 import { DEFAULT_OPTIONS, tempoAfterPass, withDefaults } from './options'
-import { nextPace, withTouch } from './perform'
+import { beatGrid, beatIndexAt, beatPlan, chordWindowMs, nextPace, withTouch } from './perform'
 import { formatAgo, formatDuration, summarize, type PracticeSession } from './stats'
 
 const note = (midi: number, time: number, measure = 1, duration = 0.5): PieceNote => ({
@@ -156,6 +156,42 @@ describe('perform', () => {
     expect(nextPace(100, 0.5, 250)).toBeCloseTo(150) // twice as fast, smoothed
     expect(nextPace(100, 0.5, 5000)).toBe(100) // a pause
     expect(nextPace(100, 10, 10)).toBe(200)
+  })
+
+  it('a slow piece can still slow the pace down (a long wait is only a pause when it is much longer than expected)', () => {
+    // A 1.5 s beat pressed every 3 s: slower, not a pause
+    expect(nextPace(100, 1.5, 3000)).toBeCloseTo(75)
+    expect(nextPace(100, 1.5, 9000)).toBe(100) // that is a pause
+  })
+
+  it('the chord window is a third of the time to the next notes, 60–150 ms', () => {
+    expect(chordWindowMs(0.3, 100)).toBeCloseTo(100)
+    expect(chordWindowMs(0.5, 100)).toBe(150)
+    expect(chordWindowMs(0.1, 100)).toBe(60)
+    expect(chordWindowMs(0.3, 200)).toBe(60) // twice as fast: half the time
+  })
+
+  it('beats follow the time signature: quarters in 4/4, dotted quarters in 6/8, a pickup bar', () => {
+    const bars = (beatsPerBar: number, beatUnit: number, durationSec: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ startSec: i * durationSec, durationSec, beatsPerBar, beatUnit, keySignature: 'C' }))
+    expect(beatGrid(bars(4, 4, 2, 2), 1, 2).map((b) => b.start)).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5])
+    expect(beatGrid(bars(6, 8, 1.5, 1), 1, 1)).toEqual([{ start: 0, end: 0.75 }, { start: 0.75, end: 1.5 }])
+    const pickup = [{ startSec: 0, durationSec: 0.5, beatsPerBar: 1, beatUnit: 4, keySignature: 'C' }, ...bars(4, 4, 2, 1).map((m) => ({ ...m, startSec: 0.5 }))]
+    expect(beatGrid(pickup, 1, 2).map((b) => b.start)).toEqual([0, 0.5, 1, 1.5, 2])
+  })
+
+  it('a note a hair early belongs to the beat it anticipates', () => {
+    const beats = [{ start: 0, end: 0.5 }, { start: 0.5, end: 1 }]
+    expect(beatIndexAt(beats, 0.49)).toBe(1)
+    expect(beatIndexAt(beats, 0.4)).toBe(0)
+  })
+
+  it('a beat plays its notes spaced as written, on-beat ones on the press; a held beat plays nothing', () => {
+    const steps = [[note(60, 0.01)], [note(62, 0.25)], [note(64, 0.5)]]
+    const plan = beatPlan(steps, 0, { start: 0, end: 0.5 })
+    expect(plan.groups.map((g) => [g.notes[0]!.midi, g.offset])).toEqual([[60, 0], [62, 0.25]])
+    expect(plan.nextStep).toBe(2)
+    expect(beatPlan(steps, 2, { start: 0, end: 0.5 }).groups).toEqual([]) // nothing new until 0.5
   })
 
   it('touch scales the step to how hard you pressed, keeping its balance', () => {
