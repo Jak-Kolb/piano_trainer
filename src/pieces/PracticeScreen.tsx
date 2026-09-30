@@ -210,6 +210,12 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     msPerSec: null as number | null,
     /** Presses sooner than this after the last are ignored. */
     ignoreMs: TAP_GAP_MS,
+    /**
+     * The next note that hasn't sounded yet (fast notes move it on as they
+     * play by themselves), and the step list it belongs to.
+     */
+    next: null as number | null,
+    of: null as PieceNote[][] | null,
   })
   const performed = useRef(freshPerform(initial.tempoPercent))
   // Assisted: which steps take a press, and the faster notes of the last
@@ -570,7 +576,12 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     // Too soon after the last press: the rest of a chord, a double hit, or
     // just faster than the music (it would race ahead). Ignored.
     if (p.at !== null && at - p.at < p.ignoreMs) return
-    const i = L.stepIdx >= L.steps.length ? 0 : L.stepIdx
+    // A press always plays the next note that hasn't sounded yet: it never
+    // skips. Press for each 16th and you get each 16th, at your speed; press
+    // eighths (Assisted) and the ones between play by themselves.
+    const known = p.of === L.steps ? p.next : null
+    let i = known ?? L.stepIdx
+    if (i >= L.steps.length) i = 0
     const s = L.steps[i]
     if (!s) return
     markActive()
@@ -581,7 +592,13 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     p.at = at
     p.pieceSec = from
     setShownPace(p.pace)
-    clearAutoNotes() // what's left of the last press is dropped: you're on the next note
+    clearAutoNotes() // the fast notes still to come are timed again from this press
+    const moveTo = (k: number) => {
+      p.of = L.steps
+      p.next = k < L.steps.length ? k : null
+      if (k < L.steps.length) setStepIdx(k)
+      else setStepIdx(L.options.repeatLoop ? 0 : L.steps.length)
+    }
 
     const assisted = L.options.performTap === 'assisted'
     const m = measureInfoAt(measures, s[0]!.measure)
@@ -590,18 +607,23 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
       ? pressPlan(L.steps, i, L.presses, eighthSec)
       : { groups: [{ offset: 0, notes: s }], nextStep: i + 1 }
     const factor = Math.max(0.25, p.pace / 100)
-    for (const g of plan.groups) {
+    plan.groups.forEach((g, k) => {
       // A chord sounds all together (a rolled chord in the file would trail).
       const time = from + g.offset
       const strike = () =>
         void playAccompaniment(withTouch(g.notes.map((n) => ({ ...n, time })), s, velocity), p.pace, time)
-      if (g.offset === 0) strike()
-      else autoTimers.current.push(window.setTimeout(strike, (g.offset / factor) * 1000))
-    }
-    const next = L.steps[plan.nextStep]
-    p.ignoreMs = tooSoonMs(next ? next[0]!.time - from : 0, p.pace)
-    if (plan.nextStep < L.steps.length) setStepIdx(plan.nextStep)
-    else setStepIdx(L.options.repeatLoop ? 0 : L.steps.length)
+      if (k === 0) return strike()
+      autoTimers.current.push(
+        window.setTimeout(() => {
+          strike()
+          moveTo(i + k + 1)
+        }, (g.offset / factor) * 1000),
+      )
+    })
+    // Too soon for the very next note (not just the next eighth) is ignored.
+    const after = L.steps[i + 1]
+    p.ignoreMs = tooSoonMs(after ? after[0]!.time - from : 0, p.pace)
+    moveTo(i + 1)
   }, [measures])
 
   // Perform: the piano stops sounding the keys you press (only the music
