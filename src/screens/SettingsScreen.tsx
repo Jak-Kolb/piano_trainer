@@ -30,7 +30,7 @@ export function SettingsScreen({
       id: 'piano',
       label: 'My piano',
       blurb: piano
-        ? `Plays on ${piano} over USB`
+        ? `Plays on ${piano}`
         : 'No piano connected: sound stays on this computer until one is',
     },
   ]

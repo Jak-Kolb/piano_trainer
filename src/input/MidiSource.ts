@@ -1,3 +1,4 @@
+import { bluetoothPiano, onBluetoothChange } from './bluetoothMidi'
 import { isEcho } from './midiEcho'
 import type { InputSource, NoteEvent } from './types'
 
@@ -27,23 +28,27 @@ export function createMidiSource(): InputSource {
   /** Keys whose note-on was the piano echoing the app: drop their note-off too. */
   const echoed = new Set<number>()
   let access: MidiAccess | null = null
+  /** Why Web MIDI isn't available (a Bluetooth piano can still connect). */
+  let accessError: string | null = null
   let status = 'MIDI off — will request access'
   let disposed = false
+  let offBluetooth: (() => void) | null = null
+  let offBluetoothKeys: (() => void) | null = null
 
   const notify = () => {
     for (const l of listeners) l()
   }
 
   const refreshDeviceLabel = () => {
-    if (!access) return
     const names: string[] = []
-    access.inputs.forEach((input) => {
+    access?.inputs.forEach((input) => {
       if (input.name) names.push(input.name)
     })
-    status =
-      names.length === 0
-        ? 'No MIDI device — plug in USB and reconnect'
-        : names.join(', ')
+    const ble = bluetoothPiano()
+    if (ble) names.push(`${ble.name} (Bluetooth)`)
+    if (names.length) status = names.join(', ')
+    else if (accessError) status = accessError
+    else if (access) status = 'No MIDI device — plug in USB or connect over Bluetooth'
   }
 
   const onMessage = (ev: { data: Uint8Array; timeStamp?: number }) => {
@@ -80,6 +85,16 @@ export function createMidiSource(): InputSource {
     notify()
   }
 
+  // A Bluetooth piano's keys come in the same way as a USB keyboard's.
+  const bindBluetooth = () => {
+    offBluetoothKeys?.()
+    offBluetoothKeys = bluetoothPiano()?.onMessage((data, time) => onMessage({ data, timeStamp: time })) ?? null
+    heldMidi.clear()
+    echoed.clear()
+    refreshDeviceLabel()
+    notify()
+  }
+
   const bindInputs = () => {
     if (!access) return
     access.inputs.forEach((input) => {
@@ -101,9 +116,14 @@ export function createMidiSource(): InputSource {
     getHeldMidiNotes: () => [...heldMidi],
     getMeter: () => null,
     supportsAutomaticGrade: () => true,
-    hasDevice: () => (access?.inputs.size ?? 0) > 0,
+    hasDevice: () => (access?.inputs.size ?? 0) > 0 || bluetoothPiano() !== null,
     async start() {
       if (disposed) return
+      if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+      if (!offBluetooth) {
+        offBluetooth = onBluetoothChange(bindBluetooth)
+        bindBluetooth()
+      }
       if (access) {
         bindInputs()
         return
@@ -114,20 +134,21 @@ export function createMidiSource(): InputSource {
         }
       ).requestMIDIAccess
       if (!request) {
-        status = 'Web MIDI not supported — use Chrome'
+        accessError = 'Web MIDI not supported — use Chrome'
+        refreshDeviceLabel()
         notify()
         throw new Error('Web MIDI unsupported')
       }
       try {
         access = await request.call(navigator, { sysex: false })
-        document.addEventListener('visibilitychange', onVisibility)
         access.onstatechange = () => {
           heldMidi.clear()
           bindInputs()
         }
         bindInputs()
       } catch {
-        status = 'MIDI permission denied'
+        accessError = 'MIDI permission denied'
+        refreshDeviceLabel()
         notify()
         throw new Error('MIDI permission denied')
       }
@@ -143,6 +164,9 @@ export function createMidiSource(): InputSource {
     dispose() {
       disposed = true
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+      offBluetooth?.()
+      offBluetoothKeys?.()
+      offBluetooth = offBluetoothKeys = null
       listeners.clear()
       noteListeners.clear()
       if (access) {

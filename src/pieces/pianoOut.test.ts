@@ -58,6 +58,15 @@ describe('midiVoice', () => {
     expect(sent).toHaveLength(3) // nothing else goes out afterwards
   })
 
+  it('sends only when due to an output that can’t hold messages (Bluetooth)', () => {
+    const v = midiVoice({ ...out, sendAheadMs: 0 }, () => clock)
+    v.play(60, 0.5, 2000, 500)
+    advance(990)
+    expect(sent).toEqual([])
+    advance(10)
+    expect(sent).toEqual([{ data: [0x90, 60, 64], at: 2000, sentAt: 2000 }])
+  })
+
   it('keeps velocity in MIDI range', () => {
     const v = midiVoice(out, () => clock)
     v.play(60, 0, 1000, 10)
