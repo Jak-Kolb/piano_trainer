@@ -8,7 +8,7 @@ describe('barsPerSystem', () => {
   it('gives more bars for shorter measures', () => {
     expect(barsPerSystem(3)).toBe(8)
   })
-  it('gives fewer bars for 6/8-style wide bars', () => {
+  it('gives fewer bars for wide 6/4 bars', () => {
     expect(barsPerSystem(6)).toBe(4)
   })
 })

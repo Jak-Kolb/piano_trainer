@@ -45,11 +45,6 @@ export function ProgressView({ onExit }: { onExit: () => void }) {
       <div className="w-full max-w-md space-y-6 overflow-y-auto py-4">
         <Stat label="Practice streak" value={`${streakCount(p.practiceDays)} days`} />
         <Stat
-          label="Sight-reading exercises (lifetime)"
-          value={String(p.sightReadingCount)}
-        />
-        <Stat label="Sight-reading level" value={String(p.sightReadingLevel)} />
-        <Stat
           label="Triad hits / misses"
           value={`${p.triadHits} / ${p.triadMisses}`}
         />

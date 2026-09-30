@@ -138,3 +138,22 @@ export function twoOctaveArpeggioNotes(
 }
 
 export const SCALE_KEY_OPTIONS = Object.keys(MAJOR_ONE_OCTAVE)
+
+/** One octave of a major scale, tonic to tonic (8 names), e.g. "G major". */
+export function majorScale(scaleKey: string): NoteName[] {
+  return [...(MAJOR_ONE_OCTAVE[scaleKey] ?? [])]
+}
+
+/** One octave up and back down (15 notes) with MIDI, for warmups. */
+export function upAndDown(
+  names: NoteName[],
+  hand: 'right' | 'left' = 'right',
+): SpelledPitch[] {
+  const up = withAscendingMidi(names, startOctaveForHand(hand))
+  return [...up, ...up.slice(0, -1).reverse()]
+}
+
+/** One-octave major arpeggio names: 1 3 5 8. */
+export function majorArpeggio(scaleKey: string): NoteName[] {
+  return majorArpeggioOneOctave(scaleKey)
+}

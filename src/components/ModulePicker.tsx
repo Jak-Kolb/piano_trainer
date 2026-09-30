@@ -12,7 +12,7 @@ export function ModulePicker({ onSelect }: Props) {
           key={m.id}
           type="button"
           onClick={() => onSelect(m.id)}
-          className="surface-card btn-module"
+          className={`surface-card btn-module${m.featured ? ' btn-module--featured sm:col-span-2' : ''}`}
         >
           <span className="btn-module-title">{m.title}</span>
           <span className="btn-module-blurb">{m.blurb}</span>

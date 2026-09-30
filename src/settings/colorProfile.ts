@@ -239,12 +239,19 @@ export function sheetColorsForPolarity(polarity: SheetPolarity): {
   dynamic: string
   ink: string
   ground: string
+  /** Play-along results on noteheads. */
+  good: string
+  warn: string
+  bad: string
 } {
   const theme = sheetThemeColors()
   if (polarity === 'light-on-dark') {
     return {
       ...theme,
       ground: theme.ink,
+      good: '#7cc48a',
+      warn: '#e0b056',
+      bad: '#e06a6a',
     }
   }
   // Dark notation on light paper — keep active brass from the profile.
@@ -257,5 +264,8 @@ export function sheetColorsForPolarity(polarity: SheetPolarity): {
     dynamic: '#3d3228',
     ink: '#f4ebda',
     ground: '#f4ebda',
+    good: '#2e7d4a',
+    warn: '#9a6a1c',
+    bad: '#b3363f',
   }
 }

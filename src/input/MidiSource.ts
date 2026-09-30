@@ -1,9 +1,9 @@
-import type { InputSource } from './types'
+import type { InputSource, NoteEvent } from './types'
 
 interface MidiInput {
   id: string
   name?: string
-  onmidimessage: ((ev: { data: Uint8Array }) => void) | null
+  onmidimessage: ((ev: { data: Uint8Array; timeStamp?: number }) => void) | null
 }
 
 interface MidiAccess {
@@ -13,6 +13,7 @@ interface MidiAccess {
 
 export function createMidiSource(): InputSource {
   const listeners = new Set<() => void>()
+  const noteListeners = new Set<(e: NoteEvent) => void>()
   const heldMidi = new Set<number>()
   let access: MidiAccess | null = null
   let status = 'MIDI off — will request access'
@@ -34,18 +35,22 @@ export function createMidiSource(): InputSource {
         : names.join(', ')
   }
 
-  const onMessage = (ev: { data: Uint8Array }) => {
+  const onMessage = (ev: { data: Uint8Array; timeStamp?: number }) => {
     const data = ev.data
     if (!data || data.length < 2) return
     const statusByte = data[0]!
     const cmd = statusByte & 0xf0
     const note = data[1]!
     const vel = data.length > 2 ? data[2]! : 0
+    // MIDIMessageEvent.timeStamp shares the performance.now() clock
+    const time = ev.timeStamp ?? performance.now()
     if (cmd === 0x90 && vel > 0) {
       heldMidi.add(note)
+      for (const l of noteListeners) l({ midi: note, on: true, velocity: vel / 127, time })
       notify()
     } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
       heldMidi.delete(note)
+      for (const l of noteListeners) l({ midi: note, on: false, velocity: 0, time })
       notify()
     }
   }
@@ -71,6 +76,7 @@ export function createMidiSource(): InputSource {
     getHeldMidiNotes: () => [...heldMidi],
     getMeter: () => null,
     supportsAutomaticGrade: () => true,
+    hasDevice: () => (access?.inputs.size ?? 0) > 0,
     async start() {
       if (disposed) return
       if (access) {
@@ -104,9 +110,14 @@ export function createMidiSource(): InputSource {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    onNote(listener) {
+      noteListeners.add(listener)
+      return () => noteListeners.delete(listener)
+    },
     dispose() {
       disposed = true
       listeners.clear()
+      noteListeners.clear()
       if (access) {
         access.inputs.forEach((input) => {
           input.onmidimessage = null
