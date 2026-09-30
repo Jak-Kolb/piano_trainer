@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InputSource } from '../input'
 import { parseMidiArrayBuffer } from './parseMidi'
+import { setLocalControl } from './pianoOut'
 import { playAccompaniment, startPlayAlong } from './pianoPlayer'
 import { DEFAULT_OPTIONS, type PieceState, type PracticeOptions } from './practice/options'
 import { PracticeScreen } from './PracticeScreen'
@@ -30,6 +31,8 @@ vi.mock('./pianoPlayer', () => ({
   silencePiano: vi.fn(),
   startPlayAlong: vi.fn(async () => ({ startedAt: performance.now(), stop: vi.fn() })),
 }))
+
+vi.mock('./pianoOut', () => ({ setLocalControl: vi.fn() }))
 
 vi.mock('./pieceStore', () => ({
   listSessions: vi.fn(async () => []),
@@ -217,6 +220,15 @@ describe('Perform mode', () => {
     }
     const played = vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi).sort())
     expect(played).toEqual([[48, 60], [62], [43, 64]])
+  })
+
+  it("mutes the piano's own key sound while performing, and restores it after", async () => {
+    vi.mocked(setLocalControl).mockClear()
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
+    expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false]])
+    await act(async () => button('Learn').click())
+    expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false], [true]])
   })
 
   it('follows your pace: pressing twice as fast plays faster', async () => {
