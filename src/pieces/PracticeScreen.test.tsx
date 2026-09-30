@@ -105,7 +105,27 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
+const otherHandSwitch = () =>
+  [...container.querySelectorAll('[role="switch"]')].find((b) =>
+    b.textContent?.includes('Play the other hand for me'),
+  ) as HTMLButtonElement
+
+async function turnOnOtherHand() {
+  await act(async () => button('Practice options').click())
+  await act(async () => otherHandSwitch().click())
+  expect(otherHandSwitch().getAttribute('aria-checked')).toBe('true')
+}
+
 describe('Learn mode', () => {
+  it('"Play the other hand for me" starts off each time you open a piece', async () => {
+    const kb = fakeKeyboard()
+    // Left on last time, and saved with the piece
+    await mount(await piece(), kb.src, stateWith({ hands: 'right' }, { otherHand: true }))
+    expect(otherHandSwitch().getAttribute('aria-checked')).toBe('false')
+    await kb.tap(60)
+    expect(playAccompaniment).not.toHaveBeenCalled()
+  })
+
   it('waits for each chord, and flags a wrong note in red', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({}))
@@ -124,7 +144,8 @@ describe('Learn mode', () => {
 
   it('plays the other hand for you when you practise one hand', async () => {
     const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ hands: 'right' }, { otherHand: true }))
+    await mount(await piece(), kb.src, stateWith({ hands: 'right' }))
+    await turnOnOtherHand()
     await kb.tap(60)
     expect(playAccompaniment).toHaveBeenCalledTimes(1)
     const [notes, tempo, from] = vi.mocked(playAccompaniment).mock.calls[0]!
@@ -232,6 +253,20 @@ describe('Perform mode', () => {
     expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false]])
     await act(async () => button('Learn').click())
     expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false], [true]])
+  })
+
+  it("gives the piano its own sound back while this tab is hidden", async () => {
+    vi.mocked(setLocalControl).mockClear()
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
+    const setVisibility = async (v: 'hidden' | 'visible') => {
+      Object.defineProperty(document, 'visibilityState', { value: v, configurable: true })
+      await act(async () => void document.dispatchEvent(new Event('visibilitychange')))
+    }
+    await setVisibility('hidden')
+    await setVisibility('visible')
+    expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false], [true], [false]])
+    delete (document as { visibilityState?: string }).visibilityState
   })
 
   it('follows your pace: pressing twice as fast plays faster', async () => {
