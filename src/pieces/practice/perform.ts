@@ -1,10 +1,11 @@
 /**
  * Perform mode (like Concert Magic on a digital piano): any key plays the
  * next notes of the piece. You set the rhythm and the touch; the app plays
- * the right notes. Press for every new note, or just a steady beat (the
- * notes inside each beat then play by themselves, at your pace).
+ * the right notes. Press for every new note, or ("Eighths") for every note
+ * down to eighth notes while faster ones (16ths, 32nds) play by themselves.
  */
-import { isCompound } from '../meter'
+import { barQuarters } from '../meter'
+import { chooseStep, TPQ } from '../notate'
 import { measureInfoAt } from '../tieSlices'
 import type { MeasureInfo, PieceNote } from '../types'
 
@@ -23,87 +24,90 @@ export function chordWindowMs(gapPieceSec: number, pace: number): number {
   return Math.min(MAX_GAP_MS, Math.max(TAP_GAP_MS, gapMs / 3))
 }
 
-/** Always a pause, not a slower tempo, past this… */
-const PAUSE_MS = 1500
-/** …or past this many times the expected wait (slow pieces can still slow down). */
-const PAUSE_FACTOR = 2.5
+// ---------------------------------------------------------------------------
+// Following your pace
+
+export interface Pace {
+  /** Tempo percent the notes are played at. */
+  pace: number
+  /** Your real milliseconds per second of the piece, from your presses (null: none yet). */
+  msPerSec: number | null
+}
+
+/** The first gap between presses: longer than this is a pause, not a tempo. */
+const FIRST_PAUSE_MS = 4000
+/** Later gaps: this many times slower than you've been going is a pause. */
+const PAUSE_FACTOR = 3
 
 /**
- * Your pace as a tempo percent, from the time between two presses and the
- * music between them. Smoothed so one uneven press doesn't lurch.
+ * Your pace after a press: `pieceSec` of music took `realMs`. It follows
+ * you straight away (the second press already sets it), mostly trusting the
+ * latest gap; a much longer gap than your own recent ones is a pause.
  */
-export function nextPace(pace: number, pieceSec: number, realMs: number): number {
-  if (pieceSec <= 0 || realMs <= 0) return pace
-  const expectedMs = (pieceSec / Math.max(0.25, pace / 100)) * 1000
-  if (realMs > Math.max(PAUSE_MS, expectedMs * PAUSE_FACTOR)) return pace
-  const tapped = (pieceSec / (realMs / 1000)) * 100
-  return Math.min(200, Math.max(25, pace * 0.5 + tapped * 0.5))
+export function followPace(p: Pace, pieceSec: number, realMs: number): Pace {
+  if (pieceSec <= 0 || realMs <= 0) return p
+  const msPerSec = realMs / pieceSec
+  const pause = p.msPerSec === null ? realMs > FIRST_PAUSE_MS : msPerSec > p.msPerSec * PAUSE_FACTOR
+  if (pause) return p
+  const tapped = 100_000 / msPerSec
+  const pace = Math.min(200, Math.max(25, p.msPerSec === null ? tapped : p.pace * 0.4 + tapped * 0.6))
+  return { pace, msPerSec: 100_000 / pace }
 }
 
 // ---------------------------------------------------------------------------
-// Tap the beat
+// Eighths: which notes take a press
 
-export interface Beat {
-  /** Piece seconds. */
-  start: number
-  end: number
+/** How far off the grid (in ticks, TPQ per quarter) a note can be and still be on it. */
+const SLACK_TICKS = 0.8
+
+/**
+ * For each step, whether it takes a press with "Eighths": notes on an eighth
+ * (or, in a beat of triplets or sextuplets, on a triplet eighth) do; the
+ * faster notes between them (16ths, 32nds, the in-between sextuplets) don't.
+ * The subdivision is read per beat, as the sheet does.
+ */
+export function pressPoints(steps: PieceNote[][], measures: MeasureInfo[]): boolean[] {
+  const where = steps.map((s) => {
+    const n = s[0]!
+    const m = measureInfoAt(measures, n.measure)
+    const q = (n.time - m.startSec) / (m.durationSec / Math.max(0.25, barQuarters(m)))
+    const k = Math.floor(q + 1 / 12) // a hair early counts as on the beat
+    return { key: `${n.measure}:${k}`, x: q - k }
+  })
+  const xsByBeat = new Map<string, number[]>()
+  for (const w of where) xsByBeat.set(w.key, [...(xsByBeat.get(w.key) ?? []), w.x])
+  const grid = new Map([...xsByBeat].map(([key, xs]) => [key, chooseStep(xs) === 3 ? TPQ / 2 : TPQ / 3]))
+  return where.map((w, i) => {
+    if (i === 0) return true
+    const t = w.x * TPQ
+    const g = grid.get(w.key)!
+    return Math.abs(t - Math.round(t / g) * g) < SLACK_TICKS
+  })
 }
 
-/** Beats in a bar: dotted quarters in 6/8, 9/8 and 12/8, otherwise the time signature's own. */
-export function beatsInBar(m: MeasureInfo): number {
-  return isCompound(m) ? m.beatsPerBar / 3 : Math.max(1, m.beatsPerBar)
-}
-
-/** Every beat of bars lo…hi, following tempo and meter changes. */
-export function beatGrid(measures: MeasureInfo[], lo: number, hi: number): Beat[] {
-  const out: Beat[] = []
-  for (let bar = lo; bar <= hi; bar++) {
-    const m = measureInfoAt(measures, bar)
-    const n = beatsInBar(m)
-    const d = m.durationSec / n
-    for (let k = 0; k < n; k++) out.push({ start: m.startSec + k * d, end: m.startSec + (k + 1) * d })
-  }
-  return out
-}
-
-/** A note this close to a beat (as a share of the beat) is on it: played a hair early or late. */
-const ON_BEAT = 0.08
-
-/** The beat a time belongs to (a hair early counts as the beat it anticipates). */
-export function beatIndexAt(beats: Beat[], t: number): number {
-  let lo = 0
-  let hi = beats.length - 1
-  let best = 0
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1
-    const b = beats[mid]!
-    if (b.start - ON_BEAT * (b.end - b.start) <= t) {
-      best = mid
-      lo = mid + 1
-    } else hi = mid - 1
-  }
-  return best
-}
-
-export interface BeatPlan {
-  /** Chords to sound, each this long after the press (piece seconds; 0 = on the press). */
+export interface PressPlan {
+  /** Chords to sound, each this long after the press (piece seconds; the first is 0). */
   groups: { offset: number; notes: PieceNote[] }[]
-  /** The first step after this beat. */
+  /** The step the next press plays. */
   nextStep: number
 }
 
 /**
- * What one press plays in "Tap the beat": the steps from `from` that fall in
- * `beat`, spaced as in the piece. Notes on the beat sound on the press. A
- * beat with nothing new (a held chord, a rest) plays nothing.
+ * What one press plays with "Eighths": the step at `from`, then the faster
+ * notes after it up to the next note that takes a press, never as much as
+ * `eighthSec` (an eighth note) later.
  */
-export function beatPlan(steps: PieceNote[][], from: number, beat: Beat): BeatPlan {
-  const tol = ON_BEAT * (beat.end - beat.start)
-  const groups: BeatPlan['groups'] = []
-  let j = from
-  while (j < steps.length && steps[j]![0]!.time < beat.end - tol) {
-    const offset = steps[j]![0]!.time - beat.start
-    groups.push({ offset: offset < tol ? 0 : offset, notes: steps[j]! })
+export function pressPlan(
+  steps: PieceNote[][],
+  from: number,
+  press: boolean[],
+  eighthSec: number,
+): PressPlan {
+  const t0 = steps[from]![0]!.time
+  const groups: PressPlan['groups'] = [{ offset: 0, notes: steps[from]! }]
+  let j = from + 1
+  while (j < steps.length && !press[j] && steps[j]![0]!.time - t0 < eighthSec * 0.9) {
+    groups.push({ offset: steps[j]![0]!.time - t0, notes: steps[j]! })
     j++
   }
   return { groups, nextStep: j }
