@@ -39,7 +39,6 @@ import {
   PERFORM_CHORD_SEC,
   pressPlan,
   pressPoints,
-  TAP_GAP_MS,
   withTouch,
 } from './practice/perform'
 import {
@@ -205,12 +204,16 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
   // ——— Perform mode: last press, your pace (tempo %), and how long after a
   // press further keys still count as the same chord ———
   const freshPerform = (pace: number) => ({
+    /** When the last note you pressed for sounded (real ms), and where it is in the piece: your pace. */
     at: null as number | null,
     pieceSec: 0,
     pace,
     msPerSec: null as number | null,
-    /** Presses sooner than this after the last are ignored. */
-    ignoreMs: TAP_GAP_MS,
+    /** When the last note of any kind sounded (fast ones too), and where. */
+    lastAt: null as number | null,
+    lastPiece: 0,
+    /** Assisted: a press that came early, waiting for its note to be due. */
+    held: null as number | null,
     /**
      * The next note that hasn't sounded yet (fast notes move it on as they
      * play by themselves), and the step list it belongs to.
@@ -573,27 +576,22 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
 
   // ——— Perform: any key plays the next notes (and, with Assisted, the faster
   // notes after them) ———
-  const performTap = useCallback((velocity: number | null, at: number) => {
+  /** Sound step `i` for a press, at real time `now`, with the fast notes after it (Assisted). */
+  const soundStep = useCallback((i: number, velocity: number | null, now: number) => {
     const L = latest.current
     const p = performed.current
-    // Too soon after the last press: the rest of a chord, a double hit, or
-    // just faster than the music (it would race ahead). Ignored.
-    if (p.at !== null && at - p.at < p.ignoreMs) return
-    // A press always plays the next note that hasn't sounded yet: it never
-    // skips. Press for each 16th and you get each 16th, at your speed; press
-    // eighths (Assisted) and the ones between play by themselves.
-    const known = p.of === L.steps ? p.next : null
-    let i = known ?? L.stepIdx
-    if (i >= L.steps.length) i = 0
     const s = L.steps[i]
     if (!s) return
-    markActive()
+    const assisted = L.options.performTap === 'assisted'
     const from = s[0]!.time
-    // The first press starts at the tempo setting; from the second the pace follows you.
+    // The first press starts at the tempo setting; from the second the pace
+    // follows you. Assisted never goes faster than written (at that setting).
     if (p.at === null) p.pace = L.tempo
-    else if (from > p.pieceSec) Object.assign(p, followPace(p, from - p.pieceSec, at - p.at))
-    p.at = at
-    p.pieceSec = from
+    else if (from > p.pieceSec) {
+      Object.assign(p, followPace(p, from - p.pieceSec, now - p.at, assisted ? L.tempo : undefined))
+    }
+    p.at = p.lastAt = now
+    p.pieceSec = p.lastPiece = from
     setShownPace(p.pace)
     clearAutoNotes() // the fast notes still to come are timed again from this press
     const moveTo = (k: number) => {
@@ -603,7 +601,6 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
       else setStepIdx(L.options.repeatLoop ? 0 : L.steps.length)
     }
 
-    const assisted = L.options.performTap === 'assisted'
     const m = measureInfoAt(measures, s[0]!.measure)
     const eighthSec = m.durationSec / Math.max(0.25, barQuarters(m)) / 2
     const plan = assisted
@@ -620,15 +617,49 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
       autoTimers.current.push(
         window.setTimeout(() => {
           strike()
+          p.lastAt = performance.now()
+          p.lastPiece = time
           moveTo(i + k + 1)
         }, (g.offset / factor) * 1000),
       )
     })
-    // Too soon for the very next note (not just the next eighth) is ignored.
-    const after = L.steps[i + 1]
-    p.ignoreMs = tooSoonMs(after ? after[0]!.time - from : 0, p.pace)
     moveTo(i + 1)
   }, [measures])
+
+  const performTap = useCallback((velocity: number | null, at: number) => {
+    const L = latest.current
+    const p = performed.current
+    if (p.held !== null) return // a press is already waiting for its note
+    // A press always plays the next note that hasn't sounded yet: it never
+    // skips. Press for each 16th and you get each 16th; press eighths
+    // (Assisted) and the ones between play by themselves.
+    const known = p.of === L.steps ? p.next : null
+    let i = known ?? L.stepIdx
+    if (i >= L.steps.length) i = 0
+    const s = L.steps[i]
+    if (!s) return
+    const gap = p.lastAt === null ? 0 : s[0]!.time - p.lastPiece
+    // Too soon after the last note: the rest of a chord, or a double hit. Ignored.
+    if (p.lastAt !== null && at - p.lastAt < tooSoonMs(gap, p.pace)) return
+    markActive()
+    // Assisted never plays faster than written: a press before its note is
+    // due waits and plays it on time.
+    if (L.options.performTap === 'assisted' && p.lastAt !== null && gap > 0) {
+      const due = p.lastAt + (gap / Math.max(0.25, L.tempo / 100)) * 1000
+      if (due > at) {
+        const id = window.setTimeout(() => {
+          p.held = null
+          // A fast note may have played it by itself meanwhile: then this press is spent.
+          const now = latest.current
+          if ((p.of === now.steps ? p.next : now.stepIdx) === i) soundStep(i, velocity, due)
+        }, due - at)
+        p.held = id
+        autoTimers.current.push(id)
+        return
+      }
+    }
+    soundStep(i, velocity, at)
+  }, [soundStep])
 
   // Perform: your sustain pedal. Local Control off cut it off from the
   // piano's sound, so it's passed on to what plays the music.
