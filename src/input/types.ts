@@ -36,5 +36,7 @@ export interface InputSource {
   onChange(listener: () => void): () => void
   /** Individual key presses/releases with timestamps (MIDI only). */
   onNote(listener: (e: NoteEvent) => void): () => void
+  /** The sustain pedal going down or up (MIDI only). */
+  onPedal(listener: (down: boolean) => void): () => void
   dispose(): void
 }

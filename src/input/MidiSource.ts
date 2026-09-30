@@ -25,6 +25,14 @@ export function createMidiSource(): InputSource {
   const listeners = new Set<() => void>()
   const noteListeners = new Set<(e: NoteEvent) => void>()
   const heldMidi = new Set<number>()
+  const pedalListeners = new Set<(down: boolean) => void>()
+  let pedalDown = false
+  const setPedal = (down: boolean) => {
+    // Only changes: the piano echoing the pedal back (Perform sends it on) is not news.
+    if (down === pedalDown) return
+    pedalDown = down
+    for (const l of pedalListeners) l(down)
+  }
   /** Keys whose note-on was the piano echoing the app: drop their note-off too. */
   const echoed = new Set<number>()
   let access: MidiAccess | null = null
@@ -57,6 +65,11 @@ export function createMidiSource(): InputSource {
     if (!data || data.length < 2) return
     const statusByte = data[0]!
     const cmd = statusByte & 0xf0
+    if (cmd === 0xb0) {
+      // Sustain pedal (controller 64): down from half-way
+      if (data[1] === 64) setPedal((data[2] ?? 0) >= 64)
+      return
+    }
     const note = data[1]!
     const vel = data.length > 2 ? data[2]! : 0
     // MIDIMessageEvent.timeStamp shares the performance.now() clock
@@ -79,7 +92,9 @@ export function createMidiSource(): InputSource {
 
   // Keys held when the tab was hidden would never see their release.
   const onVisibility = () => {
-    if (!pageHidden() || !heldMidi.size) return
+    if (!pageHidden()) return
+    setPedal(false) // its release would be missed too
+    if (!heldMidi.size) return
     heldMidi.clear()
     echoed.clear()
     notify()
@@ -161,6 +176,10 @@ export function createMidiSource(): InputSource {
       noteListeners.add(listener)
       return () => noteListeners.delete(listener)
     },
+    onPedal(listener) {
+      pedalListeners.add(listener)
+      return () => pedalListeners.delete(listener)
+    },
     dispose() {
       disposed = true
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
@@ -169,6 +188,7 @@ export function createMidiSource(): InputSource {
       offBluetooth = offBluetoothKeys = null
       listeners.clear()
       noteListeners.clear()
+      pedalListeners.clear()
       if (access) {
         access.inputs.forEach((input) => {
           input.onmidimessage = null

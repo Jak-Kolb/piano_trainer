@@ -53,4 +53,21 @@ describe('MIDI input', () => {
     expect(src.getHeldMidiNotes().sort()).toEqual([60, 64])
     expect(presses).toEqual([60, 64])
   })
+
+  it('reports the sustain pedal going down and up (a repeat, like the piano echoing it, is not news)', async () => {
+    const { src, send } = await connected()
+    const pedal: boolean[] = []
+    src.onPedal((down) => pedal.push(down))
+    send([0xb0, 64, 127], 1000)
+    send([0xb0, 64, 127], 1001) // echo
+    send([0xb0, 64, 0], 1500)
+    send([0xb0, 1, 90], 1600) // modulation: not the pedal
+    expect(pedal).toEqual([true, false])
+    // A hidden tab lets go of the pedal too
+    send([0xb0, 64, 100], 2000)
+    setVisibility('hidden')
+    expect(pedal).toEqual([true, false, true, false])
+    setVisibility('visible')
+    src.dispose()
+  })
 })
