@@ -386,17 +386,46 @@ describe('Perform: Assisted', () => {
     expect(played()).toEqual([[48, 60], [62], [64], [65], [67], [69]])
   })
 
-  it('pressing again before the fast notes have played drops them: you stay on time', async () => {
+  it('pressing again before a fast note has played plays it: nothing is skipped', async () => {
     const parsed = await parseMidiArrayBuffer(
       synthMidi({ notes: [...notes([0, 0.375, 60], [0.375, 0.125, 62], [0.5, 0.5, 64]), [0, 2, 48, 1]] }),
     )
     const kb = fakeKeyboard()
     await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'assisted' }))
     await kb.press(30) // C, with the fast D after it (due at 187 ms)
-    await later(150) // before D: press for E (the eighth, due at 250 ms)
+    await later(150) // press before D has played: this press is D
     await kb.press(31)
     await later(1000)
-    expect(played()).toEqual([[48, 60], [64]])
+    expect(played()).toEqual([[48, 60], [62]])
+    await kb.press(32) // then E
+    expect(played()).toEqual([[48, 60], [62], [64]])
+  })
+
+  it('eight 16ths: pressed at the song’s speed each press is one 16th; pressed as eighths the others fill in', async () => {
+    // At 120 bpm a 16th is 125 ms
+    const sixteenths = notes(...[60, 62, 64, 65, 67, 69, 71, 72].map((m, k) => [k * 0.25, 0.25, m] as [number, number, number]))
+    const parsed = await parseMidiArrayBuffer(synthMidi({ notes: [...sixteenths, [0, 4, 48, 1]] }))
+    const kb = fakeKeyboard()
+    await mount(parsed, kb.src, stateWith({ mode: 'perform' }, { performTap: 'assisted' }))
+    for (let k = 0; k < 8; k++) {
+      await kb.press(30 + k)
+      await later(k % 2 ? 125 : 120) // a hair before each fast one would play itself
+    }
+    await later(1000)
+    expect(played()).toEqual([[48, 60], [62], [64], [65], [67], [69], [71], [72]])
+    // Played at the song's speed, so the pace is the song's
+    const paces = vi.mocked(playAccompaniment).mock.calls.slice(1).map((c) => c[1])
+    for (const pace of paces) expect(pace).toBeGreaterThan(85)
+    for (const pace of paces) expect(pace).toBeLessThan(115)
+
+    vi.mocked(playAccompaniment).mockClear()
+    await act(async () => button('Start').click()) // back to bar 1
+    for (let k = 0; k < 4; k++) {
+      await kb.press(40 + k)
+      await later(250) // eighths
+    }
+    await later(1000)
+    expect(played()).toEqual([[48, 60], [62], [64], [65], [67], [69], [71], [72]])
   })
 
   it('two keys pressed quickly back to back are one press: it doesn’t race ahead', async () => {
