@@ -156,13 +156,16 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   const cursorBarRef = useRef(cursorBar)
   cursorBarRef.current = cursorBar
 
-  // Keep your place when the hand or range changes the step list.
+  // Keep your place when the hand or range changes the step list (or land
+  // on the bar you clicked, when that click also cleared the range).
   const stepsSeen = useRef(steps)
+  const pendingBar = useRef<number | null>(null)
   useEffect(() => {
     if (stepsSeen.current === steps) return
     stepsSeen.current = steps
-    const bar = Math.min(hi, Math.max(lo, cursorBarRef.current))
-    setStepIdx(firstStepAtBar(steps, bar))
+    const want = pendingBar.current ?? cursorBarRef.current
+    pendingBar.current = null
+    setStepIdx(firstStepAtBar(steps, Math.min(hi, Math.max(lo, want))))
   }, [steps, lo, hi])
 
   // ——— Playback (Listen / Play along) ———
@@ -634,13 +637,35 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   }, [input, hasMidi, acceptStep, recordMistake, performTap])
 
   // ——— Navigation ———
-  const jumpTo = (bar: number) => {
-    if (run !== 'idle') return
+  const resetPlace = () => {
     setSummary(null)
     latched.current = new Set()
     passMistakes.current = 0
     performed.current = { at: null, pieceSec: 0, pace: tempo }
+  }
+
+  /** Move within the practice range (arrows, bar buttons). */
+  const jumpTo = (bar: number) => {
+    if (run !== 'idle') return
+    resetPlace()
     setStepIdx(firstStepAtBar(steps, Math.min(hi, Math.max(lo, bar))))
+  }
+
+  /** A click on a bar (sheet or bar strip): go there, clearing any selected range. */
+  const goToBar = (bar: number) => {
+    if (run !== 'idle') return
+    if (!range) return jumpTo(bar)
+    resetPlace()
+    setRange(null)
+    // The step list changes with the range: land on the bar once it has.
+    if (range.start === 1 && range.end === measureCount) setStepIdx(firstStepAtBar(steps, bar))
+    else pendingBar.current = bar
+  }
+
+  /** Drag across bars (sheet or bar strip): practise just those. */
+  const chooseRange = (r: { start: number; end: number } | null) => {
+    if (run !== 'idle') return
+    setRange(r)
   }
 
   const changeMode = (m: PracticeMode) => {
@@ -729,7 +754,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
       setRange({ start: Math.min(a, bar), end: Math.max(a, bar) })
       return
     }
-    jumpTo(bar)
+    goToBar(bar)
   }
 
   const status = (() => {
@@ -838,6 +863,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
             measureCount={measureCount}
             selection={range}
             onMeasurePointer={onMeasurePointer}
+            onMeasureRange={chooseRange}
             onMeasureScroll={(dir) => jumpTo(cursorBar + dir)}
             barsPerLine={barsPerLine}
             beatsPerBar={parsed.beatsPerBar}
@@ -858,8 +884,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
           trouble={troubleBars}
           systems={systems}
           disabled={run !== 'idle'}
-          onJump={jumpTo}
-          onRange={setRange}
+          onJump={goToBar}
+          onRange={chooseRange}
         />
         {summary && (
           <RunSummary
