@@ -21,6 +21,7 @@ import {
   savePieceState,
   saveSession,
 } from './pieceStore'
+import { setLocalControl } from './pianoOut'
 import {
   playAccompaniment,
   preloadPiano,
@@ -111,7 +112,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   const [hands, setHands] = useState<HandFilter>(initial.hands)
   const [range, setRange] = useState(initial.range)
   const [view, setView] = useState<SheetView>(initial.view)
-  const [options, setOptions] = useState<PracticeOptions>(initial.options)
+  // "Play the other hand for me" starts off each time you open a piece.
+  const [options, setOptions] = useState<PracticeOptions>(() => ({ ...initial.options, otherHand: false }))
   const [polarity, setPolarity] = useState<SheetPolarity>(() => loadSheetPolarity())
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [systems, setSystems] = useState<SystemPlan[]>([])
@@ -125,17 +127,19 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     (n: PieceNote): HandFilter => (staffOf(n) === 'treble' ? 'right' : 'left'),
     [staffOf],
   )
+  // Perform plays the whole song (both hands), whatever the hands setting.
+  const handsInUse: HandFilter = mode === 'perform' ? 'both' : hands
   const inRange = useMemo(
     () => parsed.notes.filter((n) => n.measure >= lo && n.measure <= hi),
     [parsed.notes, lo, hi],
   )
   const mine = useMemo(
-    () => (hands === 'both' ? inRange : inRange.filter((n) => handOf(n) === hands)),
-    [inRange, hands, handOf],
+    () => (handsInUse === 'both' ? inRange : inRange.filter((n) => handOf(n) === handsInUse)),
+    [inRange, handsInUse, handOf],
   )
   const others = useMemo(
-    () => (hands === 'both' ? [] : inRange.filter((n) => handOf(n) !== hands)),
-    [inRange, hands, handOf],
+    () => (handsInUse === 'both' ? [] : inRange.filter((n) => handOf(n) !== handsInUse)),
+    [inRange, handsInUse, handOf],
   )
   const steps = useMemo(
     () => groupSteps(mine, chordWindowSec(parsed.secPerQuarter)),
@@ -540,15 +544,35 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     else if (from > p.pieceSec) p.pace = nextPace(p.pace, from - p.pieceSec, at - p.at)
     p.at = at
     p.pieceSec = from
-    const next = L.steps[i + 1]
-    const to = next ? next[0]!.time : from + Math.max(...s.map((n) => n.duration))
-    const otherHand = L.hands === 'both' ? [] : accompanimentFor(L.others, from, to)
-    void playAccompaniment(withTouch([...s, ...otherHand], s, velocity), p.pace, from)
+    // Only ever the step, all together, on your press (a rolled chord in the
+    // file would otherwise trail it); nothing is scheduled after it.
+    const struck = s.map((n) => ({ ...n, time: from }))
+    void playAccompaniment(withTouch(struck, s, velocity), p.pace, from)
     setShownPace(p.pace)
     if (i + 1 < L.steps.length) setStepIdx(i + 1)
     else if (L.options.repeatLoop) setStepIdx(0)
     else setStepIdx(L.steps.length)
   }, [])
+
+  // Perform: the piano stops sounding the keys you press (only the music
+  // plays) while this tab is in front; back on when you switch tabs, leave
+  // the mode or the piece, or close the page.
+  useEffect(() => {
+    if (mode !== 'perform' || !hasMidi) return
+    const sync = () => setLocalControl(document.visibilityState === 'hidden')
+    const restore = () => setLocalControl(true)
+    sync()
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('pagehide', restore)
+    window.addEventListener('pageshow', sync) // back from the browser's page cache
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('pagehide', restore)
+      window.removeEventListener('pageshow', sync)
+      restore()
+    }
+    // keyboardOn: mute again if the piano is plugged back in mid-Perform
+  }, [mode, hasMidi, keyboardOn])
 
   useEffect(() => {
     if (!hasMidi) return
@@ -710,9 +734,9 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
 
   const status = (() => {
     if (!steps.length) {
-      return hands === 'both'
+      return handsInUse === 'both'
         ? 'No notes in this range.'
-        : `No ${hands === 'right' ? 'right' : 'left'}-hand notes in this range.`
+        : `No ${handsInUse === 'right' ? 'right' : 'left'}-hand notes in this range.`
     }
     if (mode === 'play') {
       if (countIn) return 'Count-in…'
@@ -733,7 +757,9 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
       if (finished) return 'The end · press any key to play it again'
       const how = hasMidi ? 'press any key' : 'press Space or Tap'
       if (shownPace === null) {
-        return `Bar ${cursorBar} · ${how} to play the next notes. Tip: turn your piano’s Local Control off so only the music sounds.`
+        return hasMidi
+          ? `Bar ${cursorBar} · ${how} to play the next notes. Your piano’s own key sound is off while you perform (if you still hear it, turn Local Control off on the piano).`
+          : `Bar ${cursorBar} · ${how} to play the next notes.`
       }
       return `Bar ${cursorBar} · ${how} · ${Math.round(shownPace)}% pace`
     }
@@ -796,7 +822,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
         tempoTarget={nextTempo}
         onTempo={setTempo}
         hands={hands}
-        onHands={setHands}
+        onHands={mode === 'perform' ? undefined : setHands}
         range={range}
         onClearRange={() => setRange(null)}
       />
@@ -818,7 +844,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
             measures={measures}
             polarity={polarity}
             onSystemsChange={setSystems}
-            dimStaff={hands === 'right' ? 'bass' : hands === 'left' ? 'treble' : null}
+            dimStaff={handsInUse === 'right' ? 'bass' : handsInUse === 'left' ? 'treble' : null}
             noteMarks={mode === 'play' ? marks : undefined}
           />
         )}

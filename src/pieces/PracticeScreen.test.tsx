@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InputSource } from '../input'
 import { parseMidiArrayBuffer } from './parseMidi'
+import { setLocalControl } from './pianoOut'
 import { playAccompaniment, startPlayAlong } from './pianoPlayer'
 import { DEFAULT_OPTIONS, type PieceState, type PracticeOptions } from './practice/options'
 import { PracticeScreen } from './PracticeScreen'
@@ -30,6 +31,8 @@ vi.mock('./pianoPlayer', () => ({
   silencePiano: vi.fn(),
   startPlayAlong: vi.fn(async () => ({ startedAt: performance.now(), stop: vi.fn() })),
 }))
+
+vi.mock('./pianoOut', () => ({ setLocalControl: vi.fn() }))
 
 vi.mock('./pieceStore', () => ({
   listSessions: vi.fn(async () => []),
@@ -102,7 +105,27 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
+const otherHandSwitch = () =>
+  [...container.querySelectorAll('[role="switch"]')].find((b) =>
+    b.textContent?.includes('Play the other hand for me'),
+  ) as HTMLButtonElement
+
+async function turnOnOtherHand() {
+  await act(async () => button('Practice options').click())
+  await act(async () => otherHandSwitch().click())
+  expect(otherHandSwitch().getAttribute('aria-checked')).toBe('true')
+}
+
 describe('Learn mode', () => {
+  it('"Play the other hand for me" starts off each time you open a piece', async () => {
+    const kb = fakeKeyboard()
+    // Left on last time, and saved with the piece
+    await mount(await piece(), kb.src, stateWith({ hands: 'right' }, { otherHand: true }))
+    expect(otherHandSwitch().getAttribute('aria-checked')).toBe('false')
+    await kb.tap(60)
+    expect(playAccompaniment).not.toHaveBeenCalled()
+  })
+
   it('waits for each chord, and flags a wrong note in red', async () => {
     const kb = fakeKeyboard()
     await mount(await piece(), kb.src, stateWith({}))
@@ -121,7 +144,8 @@ describe('Learn mode', () => {
 
   it('plays the other hand for you when you practise one hand', async () => {
     const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ hands: 'right' }, { otherHand: true }))
+    await mount(await piece(), kb.src, stateWith({ hands: 'right' }))
+    await turnOnOtherHand()
     await kb.tap(60)
     expect(playAccompaniment).toHaveBeenCalledTimes(1)
     const [notes, tempo, from] = vi.mocked(playAccompaniment).mock.calls[0]!
@@ -208,20 +232,46 @@ describe('Perform mode', () => {
     expect(vi.mocked(playAccompaniment).mock.calls[1]![0].map((n) => n.midi)).toEqual([62])
   })
 
-  it('with one hand chosen, the other hand comes along until your next note', async () => {
+  it('plays the whole song, both hands, whatever the hands setting, only on your presses', async () => {
     const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }))
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }, { otherHand: true }))
+    expect(container.querySelector('[aria-label="Hands"]')).toBeNull()
     for (const m of [30, 31, 32]) {
       await kb.tap(m)
       await later(500)
     }
-    const played = vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi).sort())
-    expect(played).toEqual([[48, 60], [62], [43, 64]])
+    const calls = vi.mocked(playAccompaniment).mock.calls
+    expect(calls.map((c) => c[0].map((n) => n.midi).sort())).toEqual([[48, 60], [62], [43, 64]])
+    // Each press sounds its notes together, at the press: nothing trails it
+    for (const [notes, , from] of calls) expect(notes.every((n) => n.time === from)).toBe(true)
+  })
+
+  it("mutes the piano's own key sound while performing, and restores it after", async () => {
+    vi.mocked(setLocalControl).mockClear()
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
+    expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false]])
+    await act(async () => button('Learn').click())
+    expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false], [true]])
+  })
+
+  it("gives the piano its own sound back while this tab is hidden", async () => {
+    vi.mocked(setLocalControl).mockClear()
+    const kb = fakeKeyboard()
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
+    const setVisibility = async (v: 'hidden' | 'visible') => {
+      Object.defineProperty(document, 'visibilityState', { value: v, configurable: true })
+      await act(async () => void document.dispatchEvent(new Event('visibilitychange')))
+    }
+    await setVisibility('hidden')
+    await setVisibility('visible')
+    expect(vi.mocked(setLocalControl).mock.calls).toEqual([[false], [true], [false]])
+    delete (document as { visibilityState?: string }).visibilityState
   })
 
   it('follows your pace: pressing twice as fast plays faster', async () => {
     const kb = fakeKeyboard()
-    await mount(await piece(), kb.src, stateWith({ mode: 'perform', hands: 'right' }))
+    await mount(await piece(), kb.src, stateWith({ mode: 'perform' }))
     await kb.tap(40)
     await later(250) // a beat (0.5 s at 120 bpm) in 0.25 s
     await kb.tap(40)

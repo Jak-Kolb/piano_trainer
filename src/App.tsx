@@ -16,6 +16,7 @@ import {
   type InputSource,
 } from './input'
 import type { ModuleId } from './modules'
+import { setLocalControl } from './pieces/pianoOut'
 import { HomeHub } from './screens/HomeHub'
 import { PiecePage } from './screens/PiecePage'
 import { PiecesLibrary } from './screens/PiecesLibrary'
@@ -54,11 +55,26 @@ export default function App() {
     setInput(src)
     setStatus(src.getStatus())
     setStartError(null)
-    const unsub = src.onChange(() => setStatus(src.getStatus()))
-    void src.start().catch((e: unknown) => {
-      setStartError(e instanceof Error ? e.message : 'Could not start input')
+    // A Perform tab that closed without tidying up could leave the piano
+    // silent (Local Control off): opening Keys, or plugging the piano in,
+    // puts its own sound back. (Perform mutes it again while it's open.)
+    let connected = false
+    const checkDevice = () => {
+      const now = src.hasDevice()
+      if (now && !connected) setLocalControl(true)
+      connected = now
+    }
+    const unsub = src.onChange(() => {
       setStatus(src.getStatus())
+      checkDevice()
     })
+    void src
+      .start()
+      .then(checkDevice)
+      .catch((e: unknown) => {
+        setStartError(e instanceof Error ? e.message : 'Could not start input')
+        setStatus(src.getStatus())
+      })
     return () => {
       unsub()
       src.dispose()

@@ -1,3 +1,5 @@
+import { noteSent } from '../input/midiEcho'
+
 /**
  * Optional: play the app's piano sound on your own piano over USB MIDI
  * instead of the built-in sampler. Chosen in Settings; when no MIDI output
@@ -37,6 +39,8 @@ interface OutAccess {
 }
 
 let accessPromise: Promise<OutAccess | null> | null = null
+/** Set once access resolves, so leaving the page can still send synchronously. */
+let accessNow: OutAccess | null = null
 
 function midiAccess(): Promise<OutAccess | null> {
   accessPromise ??= (async () => {
@@ -45,7 +49,8 @@ function midiAccess(): Promise<OutAccess | null> {
     ).requestMIDIAccess
     if (!request) return null
     try {
-      return await request.call(navigator, { sysex: false })
+      accessNow = await request.call(navigator, { sysex: false })
+      return accessNow
     } catch {
       return null
     }
@@ -79,6 +84,20 @@ export function watchPianoOutput(onChange: (name: string | null) => void): () =>
 export async function pianoOutput(): Promise<MidiOut | null> {
   if (loadSoundOutput() !== 'piano') return null
   return firstOutput(await midiAccess())
+}
+
+/**
+ * Local Control: whether the piano sounds its own keys. Perform turns it off
+ * so only the music plays (the keys still reach the app). Sent to every
+ * connected output; pianos that ignore it keep sounding their keys.
+ */
+export function setLocalControl(on: boolean): void {
+  const send = (a: OutAccess | null) => {
+    for (const out of a?.outputs.values() ?? []) out.send([0xb0, 122, on ? 127 : 0])
+  }
+  // Synchronous when possible, so it still goes out as the page closes.
+  if (accessNow) send(accessNow)
+  else void midiAccess().then(send)
 }
 
 /** Messages go out this far ahead of when they should sound (the device times them). */
@@ -121,6 +140,7 @@ export function midiVoice(out: MidiOut, now: () => number = () => performance.no
       at(atMs, () => {
         if (sounding.has(midi)) out.send([0x80, midi, 0], stamp(atMs))
         sounding.set(midi, strike)
+        noteSent(midi, stamp(atMs))
         out.send([0x90, midi, vel], stamp(atMs))
       })
       at(atMs + durMs, () => {

@@ -15,6 +15,8 @@ Keys is built around a **real piano / digital keyboard over USB-MIDI** (for exam
 3. On Home, choose **MIDI**.
 4. Play: held notes are graded automatically.
 
+Only the Keys tab or window in front listens to the keyboard, so a Keys tab left open in the background can't play along to your keys.
+
 Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but playthrough and practice feel much better with MIDI connected.
 
 ## Practising a piece
@@ -24,14 +26,14 @@ Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but
    - **Learn** waits for you to play each step on your keyboard. You can hear a bar or a line first.
    - **Play along** keeps time with a metronome and a one-bar count-in. It grades every note as on time, early, late, missed or wrong, colours the noteheads, and ends with a results card.
    - **Listen** plays the piece, a bar or a line, with the sustain pedal.
-   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. Pick RH or LH to tap just that hand's rhythm while the other hand fills in. (Turn the piano's Local Control off so only the music sounds.)
+   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. It always plays the whole song, both hands. Keys switches the piano's Local Control off while you perform, so only the music sounds, and back on when you leave; if your piano ignores that, turn Local Control off on the piano.
 3. Choose **RH / LH / Both** and the tempo. Drag on the **bar strip** under the sheet (or shift-click bars) to practise part of the piece. Click it to jump. **← →** move by bar, and **Space** plays, pauses or skips.
 
 **Practice options** (top right) are switches, saved with each piece:
 
 | Switch | What it does |
 | --- | --- |
-| Play the other hand for me | While you practise one hand, the app plays the other (after each step in Learn, in time in Play along) |
+| Play the other hand for me | While you practise one hand, the app plays the other (after each step in Learn, in time in Play along). Starts off each time you open a piece |
 | Show my keys and wrong notes | Your held keys light up on the on-screen piano; wrong notes turn red |
 | Repeat the range / Speed up after clean passes | Loop the range, raising the tempo a step after each pass with no mistakes |
 | Metronome / Count in one bar | For Play along |

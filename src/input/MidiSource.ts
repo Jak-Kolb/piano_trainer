@@ -1,3 +1,4 @@
+import { isEcho } from './midiEcho'
 import type { InputSource, NoteEvent } from './types'
 
 interface MidiInput {
@@ -11,10 +12,20 @@ interface MidiAccess {
   onstatechange: (() => void) | null
 }
 
+/**
+ * Every open Keys tab gets every key press over Web MIDI. Only the one you're
+ * looking at should act on them: a hidden tab (another Keys tab, a minimised
+ * window) left in Perform would otherwise play along to every key.
+ */
+const pageHidden = () =>
+  typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
 export function createMidiSource(): InputSource {
   const listeners = new Set<() => void>()
   const noteListeners = new Set<(e: NoteEvent) => void>()
   const heldMidi = new Set<number>()
+  /** Keys whose note-on was the piano echoing the app: drop their note-off too. */
+  const echoed = new Set<number>()
   let access: MidiAccess | null = null
   let status = 'MIDI off — will request access'
   let disposed = false
@@ -36,6 +47,7 @@ export function createMidiSource(): InputSource {
   }
 
   const onMessage = (ev: { data: Uint8Array; timeStamp?: number }) => {
+    if (pageHidden()) return
     const data = ev.data
     if (!data || data.length < 2) return
     const statusByte = data[0]!
@@ -45,14 +57,27 @@ export function createMidiSource(): InputSource {
     // MIDIMessageEvent.timeStamp shares the performance.now() clock
     const time = ev.timeStamp ?? performance.now()
     if (cmd === 0x90 && vel > 0) {
+      if (isEcho(note, time)) {
+        echoed.add(note)
+        return
+      }
       heldMidi.add(note)
       for (const l of noteListeners) l({ midi: note, on: true, velocity: vel / 127, time })
       notify()
     } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
+      if (echoed.delete(note)) return
       heldMidi.delete(note)
       for (const l of noteListeners) l({ midi: note, on: false, velocity: 0, time })
       notify()
     }
+  }
+
+  // Keys held when the tab was hidden would never see their release.
+  const onVisibility = () => {
+    if (!pageHidden() || !heldMidi.size) return
+    heldMidi.clear()
+    echoed.clear()
+    notify()
   }
 
   const bindInputs = () => {
@@ -95,6 +120,7 @@ export function createMidiSource(): InputSource {
       }
       try {
         access = await request.call(navigator, { sysex: false })
+        document.addEventListener('visibilitychange', onVisibility)
         access.onstatechange = () => {
           heldMidi.clear()
           bindInputs()
@@ -116,6 +142,7 @@ export function createMidiSource(): InputSource {
     },
     dispose() {
       disposed = true
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
       listeners.clear()
       noteListeners.clear()
       if (access) {

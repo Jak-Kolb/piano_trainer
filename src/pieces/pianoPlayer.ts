@@ -251,7 +251,9 @@ export async function playAccompaniment(
   if (!notes.length) return
   const s = await getVoice()
   const tempoFactor = Math.max(0.25, tempoPercent / 100)
-  const now = Tone.now() + 0.02
+  // Played live (Learn, Perform): start right away, not a scheduling
+  // look-ahead (~0.1 s) later.
+  const now = Tone.immediate()
   for (const n of notes) {
     const sounding = (n.soundEnd ?? n.time + n.duration) - n.time
     s.play(
