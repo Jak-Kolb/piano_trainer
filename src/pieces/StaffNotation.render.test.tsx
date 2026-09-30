@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
+import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { parseMidiArrayBuffer } from './parseMidi'
 import { mountStaff, renderStaff } from './testing/renderStaff'
 import { synthMidi, type SynthOptions } from './testing/synthMidi'
-import { barRhythm, vexLog } from './testing/vexRecorder'
+import { barRhythm, drawnStaves, vexLog } from './testing/vexRecorder'
 
 vi.mock('vexflow', async (orig) =>
   (await import('./testing/vexRecorder')).recordingVexflow(await orig()),
@@ -148,5 +149,44 @@ describe('StaffNotation engraving details', () => {
     })
     const bass2 = staves.find((s) => s.bar === 2 && s.clef === 'bass')!
     expect([bass2.keySig, bass2.drawnClef]).toEqual(['F', 'bass'])
+  })
+})
+
+describe('StaffNotation bar clicks and drags', () => {
+  it('a click goes to a bar; click-and-drag across bars selects them', async () => {
+    const parsed = await parseMidiArrayBuffer(
+      synthMidi({
+        notes: [...[0, 4, 8, 12].map((b) => [b, 4, 60, 0] as [number, number, number, number]), ...withBass(4, 4)],
+      }),
+    )
+    const onMeasurePointer = vi.fn()
+    const onMeasureRange = vi.fn()
+    const staff = await mountStaff(parsed, { onMeasurePointer, onMeasureRange })
+    const frame = staff.container.querySelector('.staff-frame')!
+    // The drawing slides up by this much; the frame itself sits at 0,0 in jsdom.
+    const host = frame.firstElementChild as HTMLElement
+    const offset = -Number(/translateY\((-?[\d.]+)px\)/.exec(host.style.transform)![1])
+    const staves = drawnStaves()
+    const at = (bar: number) => {
+      const st = staves.find((x) => x.bar === bar && x.clef === 'treble')!
+      return { clientX: st.x + 12, clientY: st.y + 20 - offset }
+    }
+    const fire = (type: string, bar: number) =>
+      act(async () => {
+        frame.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, ...at(bar) }))
+      })
+
+    await fire('pointerdown', 3)
+    await fire('pointerup', 3)
+    expect(onMeasurePointer).toHaveBeenCalledWith(3, false)
+    expect(onMeasureRange).not.toHaveBeenCalled()
+
+    await fire('pointerdown', 1)
+    await fire('pointermove', 2)
+    await fire('pointermove', 3)
+    await fire('pointerup', 3)
+    expect(onMeasureRange).toHaveBeenCalledWith({ start: 1, end: 3 })
+    expect(onMeasurePointer).toHaveBeenCalledTimes(1)
+    await staff.unmount()
   })
 })

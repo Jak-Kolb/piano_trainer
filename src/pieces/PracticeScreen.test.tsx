@@ -279,3 +279,44 @@ describe('Perform mode', () => {
     expect(pace).toBeCloseTo(150) // halfway from 100% towards 200%
   })
 })
+
+describe('Choosing bars', () => {
+  // Four bars: a C4 and a C3 in each.
+  async function fourBars(): Promise<ParsedPiece> {
+    return parseMidiArrayBuffer(
+      synthMidi({
+        notes: [0, 4, 8, 12].flatMap((b) => [[b, 4, 60, 0], [b, 4, 48, 1]] as [number, number, number, number][]),
+      }),
+    )
+  }
+  const strip = () => {
+    const track = container.querySelector('.bar-strip-track') as HTMLElement
+    track.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 10, right: 400, bottom: 10, x: 0, y: 0, toJSON() {} })
+    track.setPointerCapture = () => {}
+    return track
+  }
+  const onStrip = (type: string, clientX: number) =>
+    act(async () => {
+      strip().dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX }))
+    })
+  const rangeChip = () => container.querySelector('.range-chip')?.textContent ?? ''
+
+  it('clicking a bar outside the selected bars clears them and goes there', async () => {
+    const kb = fakeKeyboard()
+    await mount(await fourBars(), kb.src, stateWith({ range: { start: 2, end: 3 }, lastBar: 2 }))
+    expect(rangeChip()).toContain('Bars 2–3')
+    await onStrip('pointerdown', 350) // bar 4
+    await onStrip('pointerup', 350)
+    expect(rangeChip()).toContain('Whole piece')
+    expect(status()).toContain('Bar 4')
+  })
+
+  it('dragging across the bar strip selects those bars', async () => {
+    const kb = fakeKeyboard()
+    await mount(await fourBars(), kb.src, stateWith({}))
+    await onStrip('pointerdown', 50) // bar 1
+    await onStrip('pointermove', 250) // bar 3
+    await onStrip('pointerup', 250)
+    expect(rangeChip()).toContain('Bars 1–3')
+  })
+})
