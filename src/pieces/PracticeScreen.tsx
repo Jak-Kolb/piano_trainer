@@ -112,7 +112,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   const [hands, setHands] = useState<HandFilter>(initial.hands)
   const [range, setRange] = useState(initial.range)
   const [view, setView] = useState<SheetView>(initial.view)
-  const [options, setOptions] = useState<PracticeOptions>(initial.options)
+  // "Play the other hand for me" starts off each time you open a piece.
+  const [options, setOptions] = useState<PracticeOptions>(() => ({ ...initial.options, otherHand: false }))
   const [polarity, setPolarity] = useState<SheetPolarity>(() => loadSheetPolarity())
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [systems, setSystems] = useState<SystemPlan[]>([])
@@ -554,20 +555,24 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   }, [])
 
   // Perform: the piano stops sounding the keys you press (only the music
-  // plays); back on when you leave the mode, the piece, or the page.
+  // plays) while this tab is in front; back on when you switch tabs, leave
+  // the mode or the piece, or close the page.
   useEffect(() => {
     if (mode !== 'perform' || !hasMidi) return
-    const mute = () => setLocalControl(false)
+    const sync = () => setLocalControl(document.visibilityState === 'hidden')
     const restore = () => setLocalControl(true)
-    mute()
+    sync()
+    document.addEventListener('visibilitychange', sync)
     window.addEventListener('pagehide', restore)
-    window.addEventListener('pageshow', mute) // back from the browser's page cache
+    window.addEventListener('pageshow', sync) // back from the browser's page cache
     return () => {
+      document.removeEventListener('visibilitychange', sync)
       window.removeEventListener('pagehide', restore)
-      window.removeEventListener('pageshow', mute)
+      window.removeEventListener('pageshow', sync)
       restore()
     }
-  }, [mode, hasMidi])
+    // keyboardOn: mute again if the piano is plugged back in mid-Perform
+  }, [mode, hasMidi, keyboardOn])
 
   useEffect(() => {
     if (!hasMidi) return

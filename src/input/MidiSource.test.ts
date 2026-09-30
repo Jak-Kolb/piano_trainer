@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { noteSent } from './midiEcho'
 import { createMidiSource } from './MidiSource'
@@ -20,7 +21,26 @@ async function connected() {
 
 afterEach(() => vi.unstubAllGlobals())
 
+const setVisibility = (v: 'hidden' | 'visible') => {
+  Object.defineProperty(document, 'visibilityState', { value: v, configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
 describe('MIDI input', () => {
+  it('a hidden Keys tab ignores the keyboard (and lets go of held keys)', async () => {
+    const { src, presses, send } = await connected()
+    send([0x90, 60, 90], 1000)
+    setVisibility('hidden')
+    expect(src.getHeldMidiNotes()).toEqual([])
+    send([0x90, 62, 90], 1100) // pressed while you're in another tab
+    expect(src.getHeldMidiNotes()).toEqual([])
+    setVisibility('visible')
+    send([0x90, 64, 90], 1200)
+    expect(src.getHeldMidiNotes()).toEqual([64])
+    expect(presses).toEqual([60, 64])
+    src.dispose()
+  })
+
   it("ignores the piano echoing a note the app just sent it, but not your own keys", async () => {
     const { src, presses, send } = await connected()
     noteSent(64, 5000)

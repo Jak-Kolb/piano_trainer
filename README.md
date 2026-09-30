@@ -15,6 +15,8 @@ Keys is built around a **real piano / digital keyboard over USB-MIDI** (for exam
 3. On Home, choose **MIDI**.
 4. Play: held notes are graded automatically.
 
+Only the Keys tab or window in front listens to the keyboard, so a Keys tab left open in the background can't play along to your keys.
+
 Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but playthrough and practice feel much better with MIDI connected.
 
 ## Practising a piece
@@ -31,7 +33,7 @@ Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but
 
 | Switch | What it does |
 | --- | --- |
-| Play the other hand for me | While you practise one hand, the app plays the other (after each step in Learn, in time in Play along) |
+| Play the other hand for me | While you practise one hand, the app plays the other (after each step in Learn, in time in Play along). Starts off each time you open a piece |
 | Show my keys and wrong notes | Your held keys light up on the on-screen piano; wrong notes turn red |
 | Repeat the range / Speed up after clean passes | Loop the range, raising the tempo a step after each pass with no mistakes |
 | Metronome / Count in one bar | For Play along |
