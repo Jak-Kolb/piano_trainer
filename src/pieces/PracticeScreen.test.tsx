@@ -288,7 +288,7 @@ describe('Perform mode', () => {
     expect(vi.mocked(playAccompaniment).mock.calls.map((c) => c[0].map((n) => n.midi))).toEqual([[48, 60], [62]])
   })
 
-  it('your sustain pedal works: passed on, and once used the notes last as long as their keys', async () => {
+  it('once you use your pedal, notes last as long as their keys (the app passes the pedal on itself)', async () => {
     vi.mocked(setSustainPedal).mockClear()
     const parsed = await parseMidiArrayBuffer(
       synthMidi({ notes: [[0, 0.5, 60, 0], [1, 0.5, 62, 0], [0, 2, 48, 1]], pedal: [[0, 4, 0], [0, 4, 1]] }),
@@ -299,13 +299,11 @@ describe('Perform mode', () => {
     // Before you pedal, the piece's pedalling holds its notes
     expect(vi.mocked(playAccompaniment).mock.calls[0]![0].every((n) => n.soundEnd !== undefined)).toBe(true)
     await kb.pedal(true)
-    expect(vi.mocked(setSustainPedal).mock.calls).toEqual([[true]])
     await later(500)
     await kb.press(31)
     expect(vi.mocked(playAccompaniment).mock.calls[1]![0].every((n) => n.soundEnd === undefined)).toBe(true)
-    await kb.pedal(false)
-    await act(async () => button('Learn').click()) // leaving Perform lifts it
-    expect(vi.mocked(setSustainPedal).mock.calls).toEqual([[true], [false], [false]])
+    // Passing the pedal on is the app's job, in every mode (not this screen's)
+    expect(setSustainPedal).not.toHaveBeenCalled()
   })
 
   it('follows your pace from the second press, faster or much slower', async () => {

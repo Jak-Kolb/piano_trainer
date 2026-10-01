@@ -15,7 +15,7 @@ Keys is built around a **real piano / digital keyboard over USB-MIDI** (for exam
 3. On Home, choose **MIDI**.
 4. Play: held notes are graded automatically.
 
-**Bluetooth instead of a cable:** if your piano has Bluetooth MIDI (the Kawai KDP110 does), turn it on at the piano. Then on Home choose **MIDI** → **Bluetooth piano** → **Connect**, and pick the piano in Chrome's list. Keys reconnects to it next time. On a Mac, Chrome may ask for Bluetooth permission (System Settings → Privacy & Security → Bluetooth). Use Bluetooth or the USB cable, not both at once, or every key arrives twice.
+**Bluetooth instead of a cable:** if your piano has Bluetooth MIDI (the Kawai KDP110 does), turn it on at the piano. Then on Home choose **MIDI** → **Bluetooth piano** → **Connect**, and pick the piano in Chrome's list. Keys reconnects to it next time. On a Mac, Chrome may ask for Bluetooth permission (System Settings → Privacy & Security → Bluetooth). With the USB cable plugged in too, the cable is used and Bluetooth stands by; unplug it and Bluetooth takes over.
 
 Only the Keys tab or window in front listens to the keyboard, so a Keys tab left open in the background can't play along to your keys.
 
@@ -28,7 +28,7 @@ Self-report (Hit / Miss) exists as a fallback when no keyboard is available, but
    - **Learn** waits for you to play each step on your keyboard. You can hear a bar or a line first.
    - **Play along** keeps time with a metronome and a one-bar count-in. It grades every note as on time, early, late, missed or wrong, colours the noteheads, and ends with a results card.
    - **Listen** plays the piece, a bar or a line, with the sustain pedal.
-   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. It always plays the whole song, both hands. Choose **Every note** (a press for each new note) or **Assisted** (a press for every note down to eighth notes, triplets included; faster 16ths and 32nds play by themselves). A press always plays the next note that hasn't sounded yet, so it never skips: press for each 16th and you get each one at your speed, press eighths and the 16ths fill in. Assisted never plays faster than written (at your tempo setting): press faster and each note waits for its time; press slower and it follows you. A press that comes much too soon (a rolled chord, a double hit) is ignored. Keys switches the piano's Local Control off while you perform, so only the music sounds, and back on when you leave; if your piano ignores that, turn Local Control off on the piano. Your sustain pedal still works: once you use it, notes last as long as their keys and the pedal holds them, as on a piano.
+   - **Perform** works like Concert Magic: any key plays the next notes, loud or soft as you press, at your pace. It always plays the whole song, both hands. Choose **Every note** (a press for each new note) or **Assisted** (a press for every note down to eighth notes, triplets included; faster 16ths and 32nds play by themselves). A press always plays the next note that hasn't sounded yet, so it never skips: press for each 16th and you get each one at your speed, press eighths and the 16ths fill in. Assisted never plays faster than written (at your tempo setting): press faster and each note waits for its time; press slower and it follows you. A press that comes much too soon (a rolled chord, a double hit) is ignored. Keys switches the piano's Local Control off while you perform, so only the music sounds, and back on when you leave; if your piano ignores that, turn Local Control off on the piano. Once you use the sustain pedal, notes last as long as their keys and the pedal holds them, as on a piano.
 3. Choose **RH / LH / Both** and the tempo. Click and drag across bars on the sheet, or on the **bar strip** under it, to practise just those bars. Click any bar to go there (that clears the selection). **← →** move by bar, and **Space** plays, pauses or skips.
 
 **Practice options** (top right) are switches, saved with each piece:
@@ -74,7 +74,8 @@ Imported pieces and practice history stay in this browser's IndexedDB on your ma
   - Each of these is also a drill on its own, alongside slash chords and left-hand patterns.
   - With a MIDI keyboard everything is graded as you play.
 - **Color profiles** — Night, Parchment, High contrast, Forest (Settings)
-- **Play sound through your piano** (Settings): Listen, the other hand, Perform and every “Hear it” go out over MIDI (USB or Bluetooth) to your own piano instead of the computer speakers
+- **Play sound through your piano** (Settings): Listen, the other hand, Perform and every “Hear it” go out over MIDI to your own piano instead of the computer speakers (the USB cable when it's plugged in, else Bluetooth)
+- **Your sustain pedal works everywhere:** it's passed on to whatever plays the music, your piano or the built-in one
 
 | Home | Settings |
 | --- | --- |
