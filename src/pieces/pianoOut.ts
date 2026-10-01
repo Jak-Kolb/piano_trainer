@@ -1,5 +1,6 @@
 import { bluetoothPiano, onBluetoothChange } from '../input/bluetoothMidi'
 import { noteSent } from '../input/midiEcho'
+import { isVirtualPort } from '../input/midiPorts'
 
 /**
  * Optional: play the app's piano sound on your own piano over MIDI (USB or Bluetooth)
@@ -37,6 +38,7 @@ export interface MidiOut {
 
 interface OutAccess {
   outputs: Map<string, MidiOut>
+  inputs?: Map<string, { name?: string | null }>
   addEventListener(type: 'statechange', listener: () => void): void
   removeEventListener(type: 'statechange', listener: () => void): void
 }
@@ -61,10 +63,18 @@ function midiAccess(): Promise<OutAccess | null> {
   return accessPromise
 }
 
-/** Every connected output: a Bluetooth piano first (you connected it on purpose), then USB. */
+/**
+ * Every connected output, best first: your piano on the cable (the output
+ * named like an input: the keys you play), any other real MIDI output, a
+ * Bluetooth piano (when there's no cable), then software ports.
+ */
 const outputsOf = (a: OutAccess | null): MidiOut[] => {
+  const web = [...(a?.outputs.values() ?? [])]
+  const real = web.filter((o) => !isVirtualPort(o.name))
+  const inputNames = new Set([...(a?.inputs?.values() ?? [])].map((i) => i.name ?? ''))
+  const paired = real.filter((o) => inputNames.has(o.name ?? ''))
   const ble = bluetoothPiano()
-  return [...(ble ? [ble] : []), ...(a?.outputs.values() ?? [])]
+  return [...new Set([...paired, ...real, ...(ble ? [ble] : []), ...web])]
 }
 const firstOutput = (a: OutAccess | null) => outputsOf(a)[0] ?? null
 
@@ -94,7 +104,7 @@ export function watchPianoOutput(onChange: (name: string | null) => void): () =>
 /** Your piano, when it's the chosen output and one is connected. */
 export async function pianoOutput(): Promise<MidiOut | null> {
   if (loadSoundOutput() !== 'piano') return null
-  return bluetoothPiano() ?? firstOutput(await midiAccess())
+  return firstOutput(await midiAccess())
 }
 
 /**
@@ -104,7 +114,9 @@ export async function pianoOutput(): Promise<MidiOut | null> {
  */
 export function setLocalControl(on: boolean): void {
   const send = (a: OutAccess | null) => {
-    for (const out of outputsOf(a)) out.send([0xb0, 122, on ? 127 : 0])
+    for (const out of outputsOf(a)) {
+      if (!isVirtualPort(out.name)) out.send([0xb0, 122, on ? 127 : 0])
+    }
   }
   // Synchronous when possible, so it still goes out as the page closes.
   if (accessNow) send(accessNow)
@@ -131,7 +143,7 @@ export interface MidiVoice {
  */
 export function midiVoice(out: MidiOut, now: () => number = () => performance.now()): MidiVoice {
   const pending = new Set<ReturnType<typeof setTimeout>>()
-  /** The app put the sustain pedal down (so stopping lifts it; your own pedal is left alone). */
+  /** Your sustain pedal is down (passed on to the piano). */
   let sustaining = false
   /** Pitch → the strike that owns it now. */
   const sounding = new Map<number, number>()
@@ -170,9 +182,15 @@ export function midiVoice(out: MidiOut, now: () => number = () => performance.no
       pending.clear()
       for (const midi of sounding.keys()) out.send([0x80, midi, 0])
       sounding.clear()
-      if (sustaining) out.send([0xb0, 64, 0]) // notes held by the pedal would ring on
-      sustaining = false
-      out.send([0xb0, 123, 0]) // all notes off
+      if (sustaining) {
+        // Notes held by the pedal would ring on: lift it, silence, and put
+        // it back down (your foot is still on it).
+        out.send([0xb0, 64, 0])
+        out.send([0xb0, 123, 0])
+        out.send([0xb0, 64, 127])
+      } else {
+        out.send([0xb0, 123, 0]) // all notes off
+      }
     },
     sustain(down) {
       sustaining = down

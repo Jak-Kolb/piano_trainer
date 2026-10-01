@@ -1,5 +1,6 @@
 import { bluetoothPiano, onBluetoothChange } from './bluetoothMidi'
 import { isEcho } from './midiEcho'
+import { isVirtualPort } from './midiPorts'
 import type { InputSource, NoteEvent } from './types'
 
 interface MidiInput {
@@ -47,13 +48,16 @@ export function createMidiSource(): InputSource {
     for (const l of listeners) l()
   }
 
+  /** A piano on the cable: then it's the one used, and Bluetooth stands by. */
+  const cableIn = () => [...(access?.inputs.values() ?? [])].some((i) => !isVirtualPort(i.name))
+
   const refreshDeviceLabel = () => {
     const names: string[] = []
     access?.inputs.forEach((input) => {
       if (input.name) names.push(input.name)
     })
     const ble = bluetoothPiano()
-    if (ble) names.push(`${ble.name} (Bluetooth)`)
+    if (ble) names.push(cableIn() ? 'Bluetooth on standby' : `${ble.name} (Bluetooth)`)
     if (names.length) status = names.join(', ')
     else if (accessError) status = accessError
     else if (access) status = 'No MIDI device — plug in USB or connect over Bluetooth'
@@ -103,7 +107,11 @@ export function createMidiSource(): InputSource {
   // A Bluetooth piano's keys come in the same way as a USB keyboard's.
   const bindBluetooth = () => {
     offBluetoothKeys?.()
-    offBluetoothKeys = bluetoothPiano()?.onMessage((data, time) => onMessage({ data, timeStamp: time })) ?? null
+    // With the cable in, its keys are the ones used (else every key would arrive twice).
+    offBluetoothKeys =
+      bluetoothPiano()?.onMessage((data, time) => {
+        if (!cableIn()) onMessage({ data, timeStamp: time })
+      }) ?? null
     heldMidi.clear()
     echoed.clear()
     refreshDeviceLabel()

@@ -109,6 +109,24 @@ describe('Bluetooth piano', () => {
     src.dispose()
   })
 
+  it('while the piano is on the USB cable too, its keys come from the cable only (never twice)', async () => {
+    const cable = { id: 'usb', name: 'KDP110', onmidimessage: null as null | ((e: { data: Uint8Array; timeStamp?: number }) => void) }
+    vi.stubGlobal('navigator', {
+      bluetooth: { requestDevice, getDevices: async () => [piano.device] },
+      requestMIDIAccess: async () => ({ inputs: new Map([['usb', cable]]), outputs: new Map(), onstatechange: null }),
+    })
+    const src = createMidiSource()
+    await src.start()
+    await connectBluetoothPiano()
+    expect(src.getStatus()).toBe('KDP110, Bluetooth on standby')
+    const presses: number[] = []
+    src.onNote((e) => e.on && presses.push(e.midi))
+    piano.packet(0x80, 0x81, 0x90, 60, 100) // over Bluetooth: ignored
+    cable.onmidimessage!({ data: Uint8Array.from([0x90, 60, 100]), timeStamp: 5 })
+    expect(presses).toEqual([60])
+    src.dispose()
+  })
+
   it('sends the app’s notes to the piano, batching what queues up during a write', async () => {
     await connectBluetoothPiano()
     piano.holdWrites()

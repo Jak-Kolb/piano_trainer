@@ -25,7 +25,6 @@ import { setLocalControl } from './pianoOut'
 import {
   playAccompaniment,
   preloadPiano,
-  setSustainPedal,
   silencePiano,
   startPlayAlong,
 } from './pianoPlayer'
@@ -661,18 +660,13 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit,
     soundStep(i, velocity, at)
   }, [soundStep])
 
-  // Perform: your sustain pedal. Local Control off cut it off from the
-  // piano's sound, so it's passed on to what plays the music.
+  // Perform: once you use your pedal (the app passes it on everywhere), it's
+  // yours: notes last as long as their keys and the pedal holds them.
   useEffect(() => {
     if (mode !== 'perform' || !hasMidi) return
-    const off = input.onPedal((down) => {
+    return input.onPedal(() => {
       yourPedal.current = true
-      setSustainPedal(down)
     })
-    return () => {
-      off()
-      setSustainPedal(false)
-    }
   }, [mode, hasMidi, input])
 
   // Perform: the piano stops sounding the keys you press (only the music

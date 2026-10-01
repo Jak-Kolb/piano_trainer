@@ -1,4 +1,5 @@
 import * as Tone from 'tone'
+import type { InputSource } from '../input'
 import { midiVoice, pianoOutput, type MidiOut, type MidiVoice } from './pianoOut'
 import type { PieceNote } from './types'
 import {
@@ -101,7 +102,7 @@ interface Voice {
   sampler: Tone.Sampler | null
   /** One note at Tone time `time`. */
   play(ev: PartEv, time: number): void
-  /** One note played live (Learn, Perform): it follows your sustain pedal. */
+  /** One note played live (Learn, Perform). Both follow your sustain pedal. */
   playLive(ev: PartEv, time: number): void
   releaseAll(): void
 }
@@ -116,17 +117,18 @@ function midiVoiceFor(out: MidiOut): MidiVoice {
 }
 
 /**
- * The sustain pedal for the built-in piano: a live note whose key time is up
+ * The sustain pedal for the built-in piano: a note whose key time is up
  * while the pedal is down rings on until the pedal lifts (as on a piano:
  * notes already sounding are caught too).
  */
-export function createSustain(release: (note: string) => void) {
+export function createSustain(release: (note: string, time?: number) => void) {
   let down = false
   const held = new Set<string>()
   return {
-    keyUp(note: string) {
+    /** The note's key lifts (at audio `time`, or now). */
+    keyUp(note: string, time?: number) {
       if (down) held.add(note)
-      else release(note)
+      else release(note, time)
     },
     set(next: boolean) {
       down = next
@@ -137,7 +139,7 @@ export function createSustain(release: (note: string) => void) {
   }
 }
 
-const samplerSustain = createSustain((note) => sampler?.triggerRelease(note, Tone.immediate()))
+const samplerSustain = createSustain((note, time) => sampler?.triggerRelease(note, time ?? Tone.immediate()))
 
 async function getVoice(): Promise<Voice> {
   const out = await pianoOutput()
@@ -154,7 +156,14 @@ async function getVoice(): Promise<Voice> {
   const s = await getSampler()
   return {
     sampler: s,
-    play: (ev, time) => s.triggerAttackRelease(ev.note, ev.dur, time, ev.vel),
+    // The key lifts on the transport (so pause and stop take it along).
+    play: (ev, time) => {
+      s.triggerAttack(ev.note, time, ev.vel)
+      Tone.Transport.scheduleOnce(
+        (t) => samplerSustain.keyUp(ev.note, t),
+        Tone.Transport.getSecondsAtTime(time) + ev.dur,
+      )
+    },
     playLive: (ev, time) => {
       s.triggerAttack(ev.note, time, ev.vel)
       window.setTimeout(() => samplerSustain.keyUp(ev.note), (time - Tone.immediate() + ev.dur) * 1000)
@@ -164,15 +173,23 @@ async function getVoice(): Promise<Voice> {
 }
 
 /**
- * Your sustain pedal, for notes the app plays live (Perform): passed on to
- * your piano when that's where the sound goes, else applied to the
- * built-in piano.
+ * Your sustain pedal, for everything the app plays: passed on to your piano
+ * when that's where the sound goes, else applied to the built-in piano.
  */
 export function setSustainPedal(down: boolean): void {
   samplerSustain.set(down)
   void pianoOutput().then((out) => {
     if (out) midiVoiceFor(out).sustain(down)
   })
+}
+
+/** Follow this keyboard's pedal everywhere in the app; the cleanup lifts it. */
+export function followPedal(input: InputSource): () => void {
+  const off = input.onPedal(setSustainPedal)
+  return () => {
+    off()
+    setSustainPedal(false)
+  }
 }
 
 /**
