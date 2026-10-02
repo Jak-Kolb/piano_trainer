@@ -6,6 +6,7 @@ export function fakeKeyboard() {
   const held = new Set<number>()
   const changes = new Set<() => void>()
   const notes = new Set<(e: NoteEvent) => void>()
+  const pedals = new Set<(down: boolean) => void>()
   const src: InputSource = {
     id: 'midi',
     label: 'MIDI',
@@ -24,6 +25,10 @@ export function fakeKeyboard() {
       notes.add(l)
       return () => notes.delete(l)
     },
+    onPedal(l) {
+      pedals.add(l)
+      return () => pedals.delete(l)
+    },
     dispose() {},
   }
   const send = (midi: number, on: boolean) =>
@@ -36,6 +41,11 @@ export function fakeKeyboard() {
   return {
     src,
     press: (m: number) => send(m, true),
+    /** The sustain pedal down or up. */
+    pedal: (down: boolean) =>
+      act(() => {
+        for (const l of pedals) l(down)
+      }),
     release: (m: number) => send(m, false),
     /** Press keys one after another, then let them all go. */
     tap: async (...ms: number[]) => {

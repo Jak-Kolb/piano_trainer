@@ -32,7 +32,14 @@ import { BarStrip } from './practice/BarStrip'
 import { createGrader, type Grade, type Grader, type RunSummary as Summary } from './practice/grading'
 import { accompanimentFor, classifyHeld, isWrongNote } from './practice/learn'
 import { clickTimes, countInClicks } from './practice/metronome'
-import { nextPace, TAP_GAP_MS, withTouch } from './practice/perform'
+import {
+  tooSoonMs,
+  followPace,
+  PERFORM_CHORD_SEC,
+  pressPlan,
+  pressPoints,
+  withTouch,
+} from './practice/perform'
 import {
   saveLastOptions,
   tempoAfterPass,
@@ -41,12 +48,14 @@ import {
   type PracticeOptions,
   type SheetView,
 } from './practice/options'
+import { PieceTitle } from './practice/PieceTitle'
 import { PracticeDrawer } from './practice/PracticeDrawer'
 import { RunSummary } from './practice/RunSummary'
 import { summarize, type PracticeSession } from './practice/stats'
 import { TransportBar, type RunState } from './practice/TransportBar'
 import { systemIndexOf, type SystemPlan } from './sheetLayout'
 import { StaffNotation } from './StaffNotation'
+import { barQuarters } from './meter'
 import { measureInfoAt } from './tieSlices'
 import type { HandFilter, ParsedPiece, PieceNote } from './types'
 
@@ -58,6 +67,8 @@ interface Props {
   /** Settings to start from (saved for this piece, or the last-used ones). */
   initial: PieceState
   onExit: () => void
+  /** Double-clicking the title renames the piece. */
+  onRename?: (name: string) => void
 }
 
 /** Playback in progress (Listen or Play along). */
@@ -99,7 +110,7 @@ function stepAt(steps: PieceNote[][], t: number): number {
   return best
 }
 
-export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit }: Props) {
+export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit, onRename }: Props) {
   const measureCount = parsed.measureCount
   const measures = parsed.measures
   const hasMidi = input.id === 'midi'
@@ -142,8 +153,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     [inRange, handsInUse, handOf],
   )
   const steps = useMemo(
-    () => groupSteps(mine, chordWindowSec(parsed.secPerQuarter)),
-    [mine, parsed.secPerQuarter],
+    () => groupSteps(mine, mode === 'perform' ? PERFORM_CHORD_SEC : chordWindowSec(parsed.secPerQuarter)),
+    [mine, mode, parsed.secPerQuarter],
   )
 
   // ——— Cursor: the step you're on (Learn), or where playback starts ———
@@ -189,8 +200,38 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   const [held, setHeld] = useState<number[]>([])
   const [wrongHeld, setWrongHeld] = useState<Set<number>>(new Set())
 
-  // ——— Perform mode: last press, and your pace (tempo %) ———
-  const performed = useRef<{ at: number | null; pieceSec: number; pace: number }>({ at: null, pieceSec: 0, pace: initial.tempoPercent })
+  // ——— Perform mode: last press, your pace (tempo %), and how long after a
+  // press further keys still count as the same chord ———
+  const freshPerform = (pace: number) => ({
+    /** When the last note you pressed for sounded (real ms), and where it is in the piece: your pace. */
+    at: null as number | null,
+    pieceSec: 0,
+    pace,
+    msPerSec: null as number | null,
+    /** When the last note of any kind sounded (fast ones too), and where. */
+    lastAt: null as number | null,
+    lastPiece: 0,
+    /** Assisted: a press that came early, waiting for its note to be due. */
+    held: null as number | null,
+    /**
+     * The next note that hasn't sounded yet (fast notes move it on as they
+     * play by themselves), and the step list it belongs to.
+     */
+    next: null as number | null,
+    of: null as PieceNote[][] | null,
+  })
+  const performed = useRef(freshPerform(initial.tempoPercent))
+  /** You've used your sustain pedal in Perform: notes last as long as their keys, and it holds them. */
+  const yourPedal = useRef(false)
+  // Assisted: which steps take a press, and the faster notes of the last
+  // press still to come (dropped if you press again first).
+  const presses = useMemo(() => pressPoints(steps, measures), [steps, measures])
+  const autoTimers = useRef<number[]>([])
+  const clearAutoNotes = () => {
+    for (const id of autoTimers.current) window.clearTimeout(id)
+    autoTimers.current = []
+  }
+  useEffect(() => clearAutoNotes, [])
   /** Pace shown in the status once you've started (null = not yet). */
   const [shownPace, setShownPace] = useState<number | null>(null)
 
@@ -213,8 +254,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
   }
 
   // Latest state for input / timer callbacks that subscribe once.
-  const latest = useRef({ mode, run, steps, stepIdx, options, hands, tempo, others, lo, hi })
-  latest.current = { mode, run, steps, stepIdx, options, hands, tempo, others, lo, hi }
+  const latest = useRef({ mode, run, steps, stepIdx, options, hands, tempo, others, lo, hi, presses })
+  latest.current = { mode, run, steps, stepIdx, options, hands, tempo, others, lo, hi, presses }
 
   useEffect(() => {
     preloadPiano()
@@ -532,30 +573,101 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     [recordPass],
   )
 
-  // ——— Perform: any key plays the next step (and the other hand up to the one after) ———
+  // ——— Perform: any key plays the next notes (and, with Assisted, the faster
+  // notes after them) ———
+  /** Sound step `i` for a press, at real time `now`, with the fast notes after it (Assisted). */
+  const soundStep = useCallback((i: number, velocity: number | null, now: number) => {
+    const L = latest.current
+    const p = performed.current
+    const s = L.steps[i]
+    if (!s) return
+    const assisted = L.options.performTap === 'assisted'
+    const from = s[0]!.time
+    // The first press starts at the tempo setting; from the second the pace
+    // follows you. Assisted never goes faster than written (at that setting).
+    if (p.at === null) p.pace = L.tempo
+    else if (from > p.pieceSec) {
+      Object.assign(p, followPace(p, from - p.pieceSec, now - p.at, assisted ? L.tempo : undefined))
+    }
+    p.at = p.lastAt = now
+    p.pieceSec = p.lastPiece = from
+    setShownPace(p.pace)
+    clearAutoNotes() // the fast notes still to come are timed again from this press
+    const moveTo = (k: number) => {
+      p.of = L.steps
+      p.next = k < L.steps.length ? k : null
+      if (k < L.steps.length) setStepIdx(k)
+      else setStepIdx(L.options.repeatLoop ? 0 : L.steps.length)
+    }
+
+    const m = measureInfoAt(measures, s[0]!.measure)
+    const eighthSec = m.durationSec / Math.max(0.25, barQuarters(m)) / 2
+    const plan = assisted
+      ? pressPlan(L.steps, i, L.presses, eighthSec)
+      : { groups: [{ offset: 0, notes: s }], nextStep: i + 1 }
+    const factor = Math.max(0.25, p.pace / 100)
+    plan.groups.forEach((g, k) => {
+      // A chord sounds all together (a rolled chord in the file would trail).
+      const time = from + g.offset
+      // Once your pedal is in play, the piece's own pedalling stops (it's yours).
+      const struck = g.notes.map((n) => ({ ...n, time, soundEnd: yourPedal.current ? undefined : n.soundEnd }))
+      const strike = () => void playAccompaniment(withTouch(struck, s, velocity), p.pace, time)
+      if (k === 0) return strike()
+      autoTimers.current.push(
+        window.setTimeout(() => {
+          strike()
+          p.lastAt = performance.now()
+          p.lastPiece = time
+          moveTo(i + k + 1)
+        }, (g.offset / factor) * 1000),
+      )
+    })
+    moveTo(i + 1)
+  }, [measures])
+
   const performTap = useCallback((velocity: number | null, at: number) => {
     const L = latest.current
     const p = performed.current
-    if (p.at !== null && at - p.at < TAP_GAP_MS) return // the rest of the same chord
-    const i = L.stepIdx >= L.steps.length ? 0 : L.stepIdx
+    if (p.held !== null) return // a press is already waiting for its note
+    // A press always plays the next note that hasn't sounded yet: it never
+    // skips. Press for each 16th and you get each 16th; press eighths
+    // (Assisted) and the ones between play by themselves.
+    const known = p.of === L.steps ? p.next : null
+    let i = known ?? L.stepIdx
+    if (i >= L.steps.length) i = 0
     const s = L.steps[i]
     if (!s) return
+    const gap = p.lastAt === null ? 0 : s[0]!.time - p.lastPiece
+    // Too soon after the last note: the rest of a chord, or a double hit. Ignored.
+    if (p.lastAt !== null && at - p.lastAt < tooSoonMs(gap, p.pace)) return
     markActive()
-    const from = s[0]!.time
-    // The first press starts at the tempo setting; then the pace follows you.
-    if (p.at === null) p.pace = L.tempo
-    else if (from > p.pieceSec) p.pace = nextPace(p.pace, from - p.pieceSec, at - p.at)
-    p.at = at
-    p.pieceSec = from
-    // Only ever the step, all together, on your press (a rolled chord in the
-    // file would otherwise trail it); nothing is scheduled after it.
-    const struck = s.map((n) => ({ ...n, time: from }))
-    void playAccompaniment(withTouch(struck, s, velocity), p.pace, from)
-    setShownPace(p.pace)
-    if (i + 1 < L.steps.length) setStepIdx(i + 1)
-    else if (L.options.repeatLoop) setStepIdx(0)
-    else setStepIdx(L.steps.length)
-  }, [])
+    // Assisted never plays faster than written: a press before its note is
+    // due waits and plays it on time.
+    if (L.options.performTap === 'assisted' && p.lastAt !== null && gap > 0) {
+      const due = p.lastAt + (gap / Math.max(0.25, L.tempo / 100)) * 1000
+      if (due > at) {
+        const id = window.setTimeout(() => {
+          p.held = null
+          // A fast note may have played it by itself meanwhile: then this press is spent.
+          const now = latest.current
+          if ((p.of === now.steps ? p.next : now.stepIdx) === i) soundStep(i, velocity, due)
+        }, due - at)
+        p.held = id
+        autoTimers.current.push(id)
+        return
+      }
+    }
+    soundStep(i, velocity, at)
+  }, [soundStep])
+
+  // Perform: once you use your pedal (the app passes it on everywhere), it's
+  // yours: notes last as long as their keys and the pedal holds them.
+  useEffect(() => {
+    if (mode !== 'perform' || !hasMidi) return
+    return input.onPedal(() => {
+      yourPedal.current = true
+    })
+  }, [mode, hasMidi, input])
 
   // Perform: the piano stops sounding the keys you press (only the music
   // plays) while this tab is in front; back on when you switch tabs, leave
@@ -641,7 +753,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     setSummary(null)
     latched.current = new Set()
     passMistakes.current = 0
-    performed.current = { at: null, pieceSec: 0, pace: tempo }
+    performed.current = freshPerform(tempo)
+    clearAutoNotes()
   }
 
   /** Move within the practice range (arrows, bar buttons). */
@@ -673,7 +786,8 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
     silencePiano()
     setSummary(null)
     setMarks(new Map())
-    performed.current = { at: null, pieceSec: 0, pace: tempo }
+    performed.current = freshPerform(tempo)
+    clearAutoNotes()
     setShownPace(null)
     setMode(m)
   }
@@ -782,9 +896,10 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
       if (finished) return 'The end · press any key to play it again'
       const how = hasMidi ? 'press any key' : 'press Space or Tap'
       if (shownPace === null) {
+        const fast = options.performTap === 'assisted' ? ' 16ths and faster play by themselves.' : ''
         return hasMidi
-          ? `Bar ${cursorBar} · ${how} to play the next notes. Your piano’s own key sound is off while you perform (if you still hear it, turn Local Control off on the piano).`
-          : `Bar ${cursorBar} · ${how} to play the next notes.`
+          ? `Bar ${cursorBar} · ${how} to play the next notes.${fast} Your piano’s own key sound is off while you perform (if you still hear it, turn Local Control off on the piano).`
+          : `Bar ${cursorBar} · ${how} to play the next notes.${fast}`
       }
       return `Bar ${cursorBar} · ${how} · ${Math.round(shownPace)}% pace`
     }
@@ -820,7 +935,7 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
           </svg>
           Pieces
         </button>
-        <h1 className="practice-title">{title}</h1>
+        <PieceTitle name={title} onRename={onRename} />
         <span className="practice-device" title={input.getStatus()}>
           <span className={`device-dot${keyboardOn ? ' device-dot--on' : ''}`} />
           {hasMidi ? input.getStatus() : 'No keyboard (self-report)'}
@@ -848,6 +963,15 @@ export function PracticeScreen({ pieceId, parsed, title, input, initial, onExit 
         onTempo={setTempo}
         hands={hands}
         onHands={mode === 'perform' ? undefined : setHands}
+        tap={options.performTap === 'assisted' ? 'assisted' : 'note'}
+        onTap={
+          mode === 'perform'
+            ? (t) => {
+                resetPlace()
+                setOptions((o) => ({ ...o, performTap: t }))
+              }
+            : undefined
+        }
         range={range}
         onClearRange={() => setRange(null)}
       />
