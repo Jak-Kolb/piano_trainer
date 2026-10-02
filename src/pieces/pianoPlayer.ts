@@ -1,4 +1,5 @@
 import * as Tone from 'tone'
+import type { InputSource } from '../input'
 import { midiVoice, pianoOutput, type MidiOut, type MidiVoice } from './pianoOut'
 import type { PieceNote } from './types'
 import {
@@ -101,32 +102,93 @@ interface Voice {
   sampler: Tone.Sampler | null
   /** One note at Tone time `time`. */
   play(ev: PartEv, time: number): void
+  /** One note played live (Learn, Perform). Both follow your sustain pedal. */
+  playLive(ev: PartEv, time: number): void
   releaseAll(): void
 }
 
 const midiVoices = new WeakMap<MidiOut, MidiVoice>()
 let lastMidiVoice: MidiVoice | null = null
 
+function midiVoiceFor(out: MidiOut): MidiVoice {
+  const v = midiVoices.get(out) ?? midiVoice(out)
+  midiVoices.set(out, v)
+  return v
+}
+
+/**
+ * The sustain pedal for the built-in piano: a note whose key time is up
+ * while the pedal is down rings on until the pedal lifts (as on a piano:
+ * notes already sounding are caught too).
+ */
+export function createSustain(release: (note: string, time?: number) => void) {
+  let down = false
+  const held = new Set<string>()
+  return {
+    /** The note's key lifts (at audio `time`, or now). */
+    keyUp(note: string, time?: number) {
+      if (down) held.add(note)
+      else release(note, time)
+    },
+    set(next: boolean) {
+      down = next
+      if (down) return
+      for (const n of held) release(n)
+      held.clear()
+    },
+  }
+}
+
+const samplerSustain = createSustain((note, time) => sampler?.triggerRelease(note, time ?? Tone.immediate()))
+
 async function getVoice(): Promise<Voice> {
   const out = await pianoOutput()
   if (out) {
-    const v = midiVoices.get(out) ?? midiVoice(out)
-    midiVoices.set(out, v)
+    const v = midiVoiceFor(out)
     lastMidiVoice = v
     await Tone.start()
-    return {
-      sampler: null,
-      // Tone time → the performance.now() clock MIDI timestamps use
-      play: (ev, time) =>
-        v.play(ev.midi, ev.velocity, performance.now() + (time - Tone.immediate()) * 1000, ev.dur * 1000),
-      releaseAll: () => v.releaseAll(),
-    }
+    // Tone time → the performance.now() clock MIDI timestamps use
+    const play = (ev: PartEv, time: number) =>
+      v.play(ev.midi, ev.velocity, performance.now() + (time - Tone.immediate()) * 1000, ev.dur * 1000)
+    // Your piano does the pedal itself (setSustainPedal passes it on).
+    return { sampler: null, play, playLive: play, releaseAll: () => v.releaseAll() }
   }
   const s = await getSampler()
   return {
     sampler: s,
-    play: (ev, time) => s.triggerAttackRelease(ev.note, ev.dur, time, ev.vel),
+    // The key lifts on the transport (so pause and stop take it along).
+    play: (ev, time) => {
+      s.triggerAttack(ev.note, time, ev.vel)
+      Tone.Transport.scheduleOnce(
+        (t) => samplerSustain.keyUp(ev.note, t),
+        Tone.Transport.getSecondsAtTime(time) + ev.dur,
+      )
+    },
+    playLive: (ev, time) => {
+      s.triggerAttack(ev.note, time, ev.vel)
+      window.setTimeout(() => samplerSustain.keyUp(ev.note), (time - Tone.immediate() + ev.dur) * 1000)
+    },
     releaseAll: () => s.releaseAll(),
+  }
+}
+
+/**
+ * Your sustain pedal, for everything the app plays: passed on to your piano
+ * when that's where the sound goes, else applied to the built-in piano.
+ */
+export function setSustainPedal(down: boolean): void {
+  samplerSustain.set(down)
+  void pianoOutput().then((out) => {
+    if (out) midiVoiceFor(out).sustain(down)
+  })
+}
+
+/** Follow this keyboard's pedal everywhere in the app; the cleanup lifts it. */
+export function followPedal(input: InputSource): () => void {
+  const off = input.onPedal(setSustainPedal)
+  return () => {
+    off()
+    setSustainPedal(false)
   }
 }
 
@@ -256,7 +318,7 @@ export async function playAccompaniment(
   const now = Tone.immediate()
   for (const n of notes) {
     const sounding = (n.soundEnd ?? n.time + n.duration) - n.time
-    s.play(
+    s.playLive(
       {
         note: midiToNoteName(n.midi),
         dur: Math.min(MAX_VOICE_SEC, Math.max(0.08, sounding / tempoFactor)),
@@ -271,6 +333,7 @@ export async function playAccompaniment(
 
 /** Stop anything the sampler is sounding (accompaniment, previews). */
 export function silencePiano(): void {
+  samplerSustain.set(false)
   sampler?.releaseAll()
   lastMidiVoice?.releaseAll()
 }

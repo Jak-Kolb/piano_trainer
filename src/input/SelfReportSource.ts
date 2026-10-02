@@ -17,6 +17,7 @@ export function createSelfReportSource(): InputSource {
       return () => listeners.delete(listener)
     },
     onNote: () => () => {},
+    onPedal: () => () => {},
     dispose() {
       listeners.clear()
     },

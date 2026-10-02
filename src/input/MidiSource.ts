@@ -1,5 +1,6 @@
 import { bluetoothPiano, onBluetoothChange } from './bluetoothMidi'
 import { isEcho } from './midiEcho'
+import { isVirtualPort } from './midiPorts'
 import type { InputSource, NoteEvent } from './types'
 
 interface MidiInput {
@@ -25,6 +26,14 @@ export function createMidiSource(): InputSource {
   const listeners = new Set<() => void>()
   const noteListeners = new Set<(e: NoteEvent) => void>()
   const heldMidi = new Set<number>()
+  const pedalListeners = new Set<(down: boolean) => void>()
+  let pedalDown = false
+  const setPedal = (down: boolean) => {
+    // Only changes: the piano echoing the pedal back (Perform sends it on) is not news.
+    if (down === pedalDown) return
+    pedalDown = down
+    for (const l of pedalListeners) l(down)
+  }
   /** Keys whose note-on was the piano echoing the app: drop their note-off too. */
   const echoed = new Set<number>()
   let access: MidiAccess | null = null
@@ -39,13 +48,16 @@ export function createMidiSource(): InputSource {
     for (const l of listeners) l()
   }
 
+  /** A piano on the cable: then it's the one used, and Bluetooth stands by. */
+  const cableIn = () => [...(access?.inputs.values() ?? [])].some((i) => !isVirtualPort(i.name))
+
   const refreshDeviceLabel = () => {
     const names: string[] = []
     access?.inputs.forEach((input) => {
       if (input.name) names.push(input.name)
     })
     const ble = bluetoothPiano()
-    if (ble) names.push(`${ble.name} (Bluetooth)`)
+    if (ble) names.push(cableIn() ? 'Bluetooth on standby' : `${ble.name} (Bluetooth)`)
     if (names.length) status = names.join(', ')
     else if (accessError) status = accessError
     else if (access) status = 'No MIDI device — plug in USB or connect over Bluetooth'
@@ -57,6 +69,11 @@ export function createMidiSource(): InputSource {
     if (!data || data.length < 2) return
     const statusByte = data[0]!
     const cmd = statusByte & 0xf0
+    if (cmd === 0xb0) {
+      // Sustain pedal (controller 64): down from half-way
+      if (data[1] === 64) setPedal((data[2] ?? 0) >= 64)
+      return
+    }
     const note = data[1]!
     const vel = data.length > 2 ? data[2]! : 0
     // MIDIMessageEvent.timeStamp shares the performance.now() clock
@@ -79,7 +96,9 @@ export function createMidiSource(): InputSource {
 
   // Keys held when the tab was hidden would never see their release.
   const onVisibility = () => {
-    if (!pageHidden() || !heldMidi.size) return
+    if (!pageHidden()) return
+    setPedal(false) // its release would be missed too
+    if (!heldMidi.size) return
     heldMidi.clear()
     echoed.clear()
     notify()
@@ -88,7 +107,11 @@ export function createMidiSource(): InputSource {
   // A Bluetooth piano's keys come in the same way as a USB keyboard's.
   const bindBluetooth = () => {
     offBluetoothKeys?.()
-    offBluetoothKeys = bluetoothPiano()?.onMessage((data, time) => onMessage({ data, timeStamp: time })) ?? null
+    // With the cable in, its keys are the ones used (else every key would arrive twice).
+    offBluetoothKeys =
+      bluetoothPiano()?.onMessage((data, time) => {
+        if (!cableIn()) onMessage({ data, timeStamp: time })
+      }) ?? null
     heldMidi.clear()
     echoed.clear()
     refreshDeviceLabel()
@@ -161,6 +184,10 @@ export function createMidiSource(): InputSource {
       noteListeners.add(listener)
       return () => noteListeners.delete(listener)
     },
+    onPedal(listener) {
+      pedalListeners.add(listener)
+      return () => pedalListeners.delete(listener)
+    },
     dispose() {
       disposed = true
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
@@ -169,6 +196,7 @@ export function createMidiSource(): InputSource {
       offBluetooth = offBluetoothKeys = null
       listeners.clear()
       noteListeners.clear()
+      pedalListeners.clear()
       if (access) {
         access.inputs.forEach((input) => {
           input.onmidimessage = null

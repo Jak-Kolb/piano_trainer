@@ -18,6 +18,7 @@ import {
 import type { ModuleId } from './modules'
 import { reconnectBluetoothPiano } from './input/bluetoothMidi'
 import { setLocalControl } from './pieces/pianoOut'
+import { followPedal } from './pieces/pianoPlayer'
 import { HomeHub } from './screens/HomeHub'
 import { PiecePage } from './screens/PiecePage'
 import { PiecesLibrary } from './screens/PiecesLibrary'
@@ -69,6 +70,8 @@ export default function App() {
       setStatus(src.getStatus())
       checkDevice()
     })
+    // Your sustain pedal works everywhere: Listen, Play along, Perform, drills.
+    const unpedal = followPedal(src)
     // The Bluetooth piano from last time, if Chrome remembers it and it's on.
     if (mode === 'midi') void reconnectBluetoothPiano()
     void src
@@ -80,6 +83,7 @@ export default function App() {
       })
     return () => {
       unsub()
+      unpedal()
       src.dispose()
     }
   }, [mode])
