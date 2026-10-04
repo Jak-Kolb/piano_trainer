@@ -1,3 +1,10 @@
+import { useEffect, useState } from 'react'
+import {
+  loadSoundOutput,
+  saveSoundOutput,
+  watchPianoOutput,
+  type SoundOutput,
+} from '../pieces/pianoOut'
 import {
   COLOR_PROFILES,
   type ColorProfileId,
@@ -14,6 +21,20 @@ export function SettingsScreen({
   onBack,
   onColorProfile,
 }: Props) {
+  const [sound, setSound] = useState<SoundOutput>(loadSoundOutput)
+  const [piano, setPiano] = useState<string | null>(null)
+  useEffect(() => watchPianoOutput(setPiano), [])
+  const soundOptions: { id: SoundOutput; label: string; blurb: string }[] = [
+    { id: 'computer', label: 'This computer', blurb: 'Built-in grand piano sound' },
+    {
+      id: 'piano',
+      label: 'My piano',
+      blurb: piano
+        ? `Plays on ${piano}`
+        : 'No piano connected: sound stays on this computer until one is',
+    },
+  ]
+
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-ink">
       <div className="topbar">
@@ -25,6 +46,31 @@ export function SettingsScreen({
       </div>
 
       <main className="page-main page-main--settings space-y-8">
+        <section className="space-y-3">
+          <h2 className="font-display text-lg text-ivory">Play sound through</h2>
+          <p className="font-ui text-sm text-dust">
+            Listen, Perform, the other hand in play-along, and “Hear it”. The metronome stays on this computer.
+          </p>
+          <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Play sound through">
+            {soundOptions.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                role="radio"
+                aria-checked={sound === o.id}
+                onClick={() => {
+                  setSound(o.id)
+                  saveSoundOutput(o.id)
+                }}
+                className={`surface-card px-3 py-3 text-left ${sound === o.id ? 'surface-card--on' : ''}`}
+              >
+                <p className="font-ui text-sm text-ivory">{o.label}</p>
+                <p className="font-ui text-xs text-dust">{o.blurb}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="space-y-3">
           <h2 className="font-display text-lg text-ivory">Color profile</h2>
           <p className="font-ui text-sm text-dust">
@@ -39,7 +85,7 @@ export function SettingsScreen({
                   type="button"
                   onClick={() => onColorProfile(p.id)}
                   className={`surface-card px-3 py-3 text-left ${
-                    selected ? 'ring-2 ring-brass' : ''
+                    selected ? 'surface-card--on' : ''
                   }`}
                 >
                   <div className="mb-2 flex gap-1">

@@ -11,6 +11,11 @@ export interface PieceNote {
   measure: number
   /** Note-on velocity 0–1 from the MIDI file (dynamics). */
   velocity: number
+  /**
+   * When the note stops sounding (sec), after the sustain pedal holds it
+   * past the key release. Playback only; notation uses `duration`.
+   */
+  soundEnd?: number
 }
 
 export interface StoredPiece {
@@ -25,6 +30,20 @@ export interface StoredPiece {
   hasTwoHands: boolean
 }
 
+/** Absolute timing for one bar (handles tempo + time-sig changes). */
+export interface MeasureInfo {
+  /** Absolute start time (seconds) */
+  startSec: number
+  /** Bar length in seconds */
+  durationSec: number
+  /** Numerator for this bar (3 or 4 etc.) */
+  beatsPerBar: number
+  /** Denominator for this bar: 4 = quarter-note beat, 8 = eighth, 2 = half. */
+  beatUnit: number
+  /** VexFlow key name in force for this bar, e.g. "G" or "Em". */
+  keySignature: string
+}
+
 export interface ParsedPiece {
   notes: PieceNote[]
   durationSec: number
@@ -33,15 +52,14 @@ export interface ParsedPiece {
   ppq: number
   /** seconds per quarter at file tempo (first tempo) */
   secPerQuarter: number
-  /** VexFlow key name, e.g. "G" or "Em". Defaults to "C". */
+  /** VexFlow key name at bar 1, e.g. "G" or "Em". Defaults to "C". */
   keySignature: string
-  /** Time-signature numerator (beats per bar), e.g. 4 in 4/4. */
+  /** Time-signature numerator of the *first* bar (for barsPerSystem). */
   beatsPerBar: number
-}
-
-export interface PieceControls {
-  tempoPercent: number
-  loopStartMeasure: number
-  loopEndMeasure: number
-  hands: HandFilter
+  /**
+   * Per-measure timeline. Index 0 = measure 1.
+   * Built from Tone ticksToMeasures / ticksToSeconds so bar starts
+   * stay correct across tempo and meter changes.
+   */
+  measures: MeasureInfo[]
 }

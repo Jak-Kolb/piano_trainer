@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { InversionDrill } from './drills/InversionDrill'
 import { LeftHandDrill } from './drills/LeftHandDrill'
+import { ProgressionDrill } from './drills/ProgressionDrill'
 import { ProgressView } from './drills/ProgressView'
-import { RhythmDrill } from './drills/RhythmDrill'
 import { ScaleDrill } from './drills/ScaleDrill'
-import { SessionRunner } from './drills/SessionRunner'
-import { SightReadingDrill } from './drills/SightReadingDrill'
 import { SlashChordDrill } from './drills/SlashChordDrill'
+import { TheoryDrill } from './drills/TheoryDrill'
 import { TriadRecall } from './drills/TriadRecall'
+import { WarmupSession } from './drills/warmup/WarmupSession'
 import {
   createInputSource,
   loadSavedInputMode,
@@ -16,6 +16,9 @@ import {
   type InputSource,
 } from './input'
 import type { ModuleId } from './modules'
+import { reconnectBluetoothPiano } from './input/bluetoothMidi'
+import { setLocalControl } from './pieces/pianoOut'
+import { followPedal } from './pieces/pianoPlayer'
 import { HomeHub } from './screens/HomeHub'
 import { PiecePage } from './screens/PiecePage'
 import { PiecesLibrary } from './screens/PiecesLibrary'
@@ -54,13 +57,33 @@ export default function App() {
     setInput(src)
     setStatus(src.getStatus())
     setStartError(null)
-    const unsub = src.onChange(() => setStatus(src.getStatus()))
-    void src.start().catch((e: unknown) => {
-      setStartError(e instanceof Error ? e.message : 'Could not start input')
+    // A Perform tab that closed without tidying up could leave the piano
+    // silent (Local Control off): opening Keys, or plugging the piano in,
+    // puts its own sound back. (Perform mutes it again while it's open.)
+    let connected = false
+    const checkDevice = () => {
+      const now = src.hasDevice()
+      if (now && !connected) setLocalControl(true)
+      connected = now
+    }
+    const unsub = src.onChange(() => {
       setStatus(src.getStatus())
+      checkDevice()
     })
+    // Your sustain pedal works everywhere: Listen, Play along, Perform, drills.
+    const unpedal = followPedal(src)
+    // The Bluetooth piano from last time, if Chrome remembers it and it's on.
+    if (mode === 'midi') void reconnectBluetoothPiano()
+    void src
+      .start()
+      .then(checkDevice)
+      .catch((e: unknown) => {
+        setStartError(e instanceof Error ? e.message : 'Could not start input')
+        setStatus(src.getStatus())
+      })
     return () => {
       unsub()
+      unpedal()
       src.dispose()
     }
   }, [mode])
@@ -77,6 +100,8 @@ export default function App() {
   if (nav.screen === 'drill') {
     const back = () => setNav({ screen: 'skills' })
     switch (nav.id) {
+      case 'warmup':
+        return <WarmupSession input={input} onExit={back} />
       case 'triad-recall':
         return <TriadRecall input={input} onExit={back} />
       case 'inversions':
@@ -89,14 +114,10 @@ export default function App() {
         return <ScaleDrill input={input} onExit={back} kind="arpeggio" />
       case 'left-hand':
         return <LeftHandDrill input={input} onExit={back} />
-      case 'sight-reading':
-        return <SightReadingDrill input={input} onExit={back} />
-      case 'rhythm':
-        return <RhythmDrill input={input} onExit={back} />
-      case 'session':
-        return <SessionRunner input={input} onExit={back} />
-      case 'session-reading':
-        return <SessionRunner input={input} onExit={back} readingOnly />
+      case 'progressions':
+        return <ProgressionDrill input={input} onExit={back} />
+      case 'theory':
+        return <TheoryDrill input={input} onExit={back} />
       case 'progress':
         return <ProgressView onExit={back} />
     }

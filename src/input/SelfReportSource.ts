@@ -10,11 +10,14 @@ export function createSelfReportSource(): InputSource {
     getHeldMidiNotes: () => [],
     getMeter: () => null,
     supportsAutomaticGrade: () => false,
+    hasDevice: () => false,
     async start() {},
     onChange(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    onNote: () => () => {},
+    onPedal: () => () => {},
     dispose() {
       listeners.clear()
     },
